@@ -567,6 +567,16 @@ export default function App() {
     await db.tables.putAll(updatedTables);
   };
 
+  const triggerInstantCloudSync = () => {
+    if (syncConfig.enabled && isOnline) {
+      performCloudSync().then((result) => {
+        if (result.success && result.count > 0) {
+          handleReloadDatabase();
+        }
+      }).catch(err => console.warn('[PortablePOS Sync] Instant sync failed:', err));
+    }
+  };
+
   const handleUpdateMenu = async (updatedMenu) => {
     setMenu(updatedMenu);
     
@@ -595,6 +605,7 @@ export default function App() {
       };
       await db.menu.put(enrichedItem);
     }
+    triggerInstantCloudSync();
   };
 
   const handleUpdateInventory = async (updatedInventory) => {
@@ -625,6 +636,7 @@ export default function App() {
       };
       await db.inventory.put(enrichedItem);
     }
+    triggerInstantCloudSync();
   };
 
   const handleAddSale = async (newSale) => {
@@ -635,6 +647,7 @@ export default function App() {
     };
     setSales(prev => [...prev, enrichedSale]);
     await db.sales.add(enrichedSale);
+    triggerInstantCloudSync();
   };
 
   const handleSeedSales = async (seededSales) => {
@@ -647,6 +660,7 @@ export default function App() {
       };
       await db.sales.add(enrichedSale);
     }
+    triggerInstantCloudSync();
   };
 
   const handleUpdateEmployees = async (updatedEmployees) => {
@@ -677,13 +691,20 @@ export default function App() {
       };
       await db.employees.put(enrichedItem);
     }
+    triggerInstantCloudSync();
   };
 
   const handleUpdateAttendance = async (updatedAttendance) => {
     setAttendance(updatedAttendance);
     for (const entry of updatedAttendance) {
-      await db.attendance.put(entry);
+      const enrichedEntry = {
+        ...entry,
+        restaurant_id: syncConfig.restaurantId || 'my_restaurant',
+        synced: entry.synced === true
+      };
+      await db.attendance.put(enrichedEntry);
     }
+    triggerInstantCloudSync();
   };
 
   // Navigations mapping
