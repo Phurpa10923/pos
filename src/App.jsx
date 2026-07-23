@@ -345,7 +345,7 @@ export default function App() {
         const remoteEmployees = await response.json();
 
         const matched = remoteEmployees.find(emp => emp.username === u && emp.password === p && emp.status === 'active');
-        if (!matched && !(u === 'admin' && p === 'admin123')) {
+        if (!matched) {
           addToast('Invalid credentials for this restaurant ID', 'error');
           setIsVerifying(false);
           return;
@@ -361,13 +361,8 @@ export default function App() {
         await db.employees.clear();
         await db.employees.putAll(remoteEmployees.map(emp => ({ ...emp, synced: true })));
 
-        if (matched) {
-          setCurrentUser({ name: matched.name, username: matched.username, role: matched.role, id: matched.id });
-          addToast(`Logged in successfully! Linked to: ${officialStoreName}`);
-        } else {
-          setCurrentUser({ name: 'System Manager', username: 'admin', role: 'Manager' });
-          addToast(`Logged in as Administrator! Linked to: ${officialStoreName}`);
-        }
+        setCurrentUser({ name: matched.name, username: matched.username, role: matched.role, id: matched.id });
+        addToast(`Logged in successfully! Linked to: ${officialStoreName}`);
 
         // Pull other tables in the background
         performCloudSync().then((result) => {
@@ -416,14 +411,7 @@ export default function App() {
       setIsVerifying(false);
     }
 
-    // Fallback account check (only allowed if database is empty/unseeded)
-    if (u === 'admin' && p === 'admin123' && currentEmployees.length === 0) {
-      setCurrentUser({ id: 'emp_admin', name: 'System Manager', username: 'admin', role: 'Manager' });
-      addToast('Logged in as Initial Administrator');
-      setLoginUser('');
-      setLoginPass('');
-      return;
-    }
+
 
     const matched = currentEmployees.find(emp => emp.username === u && emp.password === p && emp.status === 'active');
     if (matched) {
@@ -866,9 +854,7 @@ export default function App() {
               {showCloudSetup ? 'Cancel Cloud Connection' : (SUPABASE_URL && SUPABASE_ANON_KEY) ? 'Connect Restaurant (Cloud)' : 'Connect New Restaurant (Cloud)'}
             </button>
 
-            <div style={{ textAlign: 'center', fontSize: '10px', color: 'var(--text-muted)' }}>
-              Default Local Fallback: <code>admin</code> / <code>admin123</code>
-            </div>
+
           </div>
         </div>
         
