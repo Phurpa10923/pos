@@ -106,8 +106,9 @@ CREATE TABLE public.sales (
     tax_amount NUMERIC,
     tax_breakdown JSONB,
     total NUMERIC NOT NULL DEFAULT 0,
-    payment_method TEXT NOT NULL CONSTRAINT chk_payment CHECK (payment_method IN ('Cash', 'UPI', 'Split (Cash + UPI)')),
+    payment_method TEXT NOT NULL,
     cashier TEXT,
+    server_name TEXT,
     whatsapp_number TEXT,
     synced BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
