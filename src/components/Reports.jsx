@@ -659,7 +659,7 @@ export default function Reports({
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       
       {/* Selection Control Panel */}
-      <div className="glass-panel" style={{ padding: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+      <div className="glass-panel reports-top-bar" style={{ padding: '20px' }}>
         <div style={{ display: 'flex', gap: '10px' }}>
           <button 
             className={`btn ${reportType === 'daily' ? 'btn-primary' : 'btn-secondary'}`}
@@ -675,7 +675,7 @@ export default function Reports({
           </button>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div className="report-header-actions">
           {reportType === 'daily' ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(0,0,0,0.15)', padding: '6px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}>
               <Calendar size={14} style={{ color: 'var(--text-secondary)' }} />

@@ -12,6 +12,7 @@ export default function Employees({
   const [showAddModal, setShowAddModal] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [editingEmployee, setEditingEmployee] = useState(null);
+  const [activeTab, setActiveTab] = useState('attendance'); // 'attendance' or 'roster'
   
   // Form states
   const [name, setName] = useState('');
@@ -251,10 +252,26 @@ export default function Employees({
   }
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '20px' }}>
-      
-      {/* Attendance Tracker (Left pane) */}
-      <div className="glass-panel" style={{ padding: '24px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', width: '100%' }}>
+      {/* Mobile Tab Swapper */}
+      <div className="employee-tabs-header">
+        <button 
+          className={`filter-tab ${activeTab === 'attendance' ? 'active' : ''}`}
+          onClick={() => setActiveTab('attendance')}
+        >
+          📅 Attendance
+        </button>
+        <button 
+          className={`filter-tab ${activeTab === 'roster' ? 'active' : ''}`}
+          onClick={() => setActiveTab('roster')}
+        >
+          👥 Staff Roster
+        </button>
+      </div>
+
+      <div className="employee-layout-grid">
+        {/* Attendance Tracker (Left pane) */}
+        <div className={`glass-panel employee-pane-card ${activeTab === 'attendance' ? 'show-mobile' : ''}`} style={{ padding: '24px' }}>
         <div className="section-header">
           <h2 className="section-title">
             <Clock size={20} className="text-teal" />
@@ -333,10 +350,10 @@ export default function Employees({
             })}
           </div>
         )}
-      </div>
+        </div>
 
       {/* Roster / Staff List (Right pane) */}
-      <div className="glass-panel" style={{ padding: '24px', height: 'fit-content' }}>
+      <div className={`glass-panel employee-pane-card ${activeTab === 'roster' ? 'show-mobile' : ''}`} style={{ padding: '24px', height: 'fit-content' }}>
         <div className="section-header">
           <h2 className="section-title"> Roster Details </h2>
           <div style={{ display: 'flex', gap: '6px' }}>
@@ -411,8 +428,9 @@ export default function Employees({
           </div>
         )}
       </div>
+    </div>
 
-      {/* Modal: Add Employee */}
+    {/* Modal: Add Employee */}
       {showAddModal && (
         <div className="overlay">
           <div className="glass-panel modal-content" style={{ maxWidth: '400px' }}>
