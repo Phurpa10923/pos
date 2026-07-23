@@ -21,16 +21,93 @@ export function saveSyncSettings(enabled, url, password, restaurantId) {
   localStorage.setItem('restaurant_id', restaurantId);
 }
 
+// Conversions from local (camelCase) to remote (snake_case)
+function toSnakeCase(item, tableName) {
+  const converted = { ...item };
+  
+  if (tableName === 'inventory') {
+    if ('costPrice' in converted) { converted.cost_price = converted.costPrice; delete converted.costPrice; }
+    if ('minStock' in converted) { converted.min_stock = converted.minStock; delete converted.minStock; }
+  }
+  
+  if (tableName === 'menu') {
+    if ('inventoryId' in converted) { converted.inventory_id = converted.inventoryId; delete converted.inventoryId; }
+    if ('inventoryQty' in converted) { converted.inventory_qty = converted.inventoryQty; delete converted.inventoryQty; }
+  }
+  
+  if (tableName === 'sales') {
+    if ('tableName' in converted) { converted.table_name = converted.tableName; delete converted.tableName; }
+    if ('taxType' in converted) { converted.tax_type = converted.taxType; delete converted.taxType; }
+    if ('taxRate' in converted) { converted.tax_rate = converted.taxRate; delete converted.taxRate; }
+    if ('taxAmount' in converted) { converted.tax_amount = converted.taxAmount; delete converted.taxAmount; }
+    if ('taxBreakdown' in converted) { converted.tax_breakdown = converted.taxBreakdown; delete converted.taxBreakdown; }
+    if ('paymentMethod' in converted) { converted.payment_method = converted.paymentMethod; delete converted.paymentMethod; }
+    if ('whatsappNumber' in converted) { converted.whatsapp_number = converted.whatsappNumber; delete converted.whatsappNumber; }
+    if ('serverName' in converted) { converted.server_name = converted.serverName; delete converted.serverName; }
+  }
+  
+  if (tableName === 'attendance') {
+    if ('employeeId' in converted) { converted.employee_id = converted.employeeId; delete converted.employeeId; }
+    if ('employeeName' in converted) { converted.employee_name = converted.employeeName; delete converted.employeeName; }
+    if ('clockIn' in converted) { converted.clock_in = converted.clockIn; delete converted.clockIn; }
+    if ('clockInRaw' in converted) { converted.clock_in_raw = converted.clockInRaw; delete converted.clockInRaw; }
+    if ('clockOut' in converted) { converted.clock_out = converted.clockOut; delete converted.clockOut; }
+    if ('clockOutRaw' in converted) { converted.clock_out_raw = converted.clockOutRaw; delete converted.clockOutRaw; }
+  }
+  
+  return converted;
+}
+
+// Conversions from remote (snake_case) to local (camelCase)
+function toCamelCase(item, tableName) {
+  const converted = { ...item };
+  
+  if (tableName === 'inventory') {
+    if ('cost_price' in converted) { converted.costPrice = converted.cost_price; delete converted.cost_price; }
+    if ('min_stock' in converted) { converted.minStock = converted.min_stock; delete converted.min_stock; }
+  }
+  
+  if (tableName === 'menu') {
+    if ('inventory_id' in converted) { converted.inventoryId = converted.inventory_id; delete converted.inventory_id; }
+    if ('inventory_qty' in converted) { converted.inventoryQty = converted.inventory_qty; delete converted.inventory_qty; }
+  }
+  
+  if (tableName === 'sales') {
+    if ('table_name' in converted) { converted.tableName = converted.table_name; delete converted.table_name; }
+    if ('tax_type' in converted) { converted.taxType = converted.tax_type; delete converted.tax_type; }
+    if ('tax_rate' in converted) { converted.taxRate = converted.tax_rate; delete converted.tax_rate; }
+    if ('tax_amount' in converted) { converted.taxAmount = converted.tax_amount; delete converted.tax_amount; }
+    if ('tax_breakdown' in converted) { converted.taxBreakdown = converted.tax_breakdown; delete converted.tax_breakdown; }
+    if ('payment_method' in converted) { converted.paymentMethod = converted.payment_method; delete converted.payment_method; }
+    if ('whatsapp_number' in converted) { converted.whatsappNumber = converted.whatsapp_number; delete converted.whatsapp_number; }
+    if ('server_name' in converted) { converted.serverName = converted.server_name; delete converted.server_name; }
+  }
+  
+  if (tableName === 'attendance') {
+    if ('employee_id' in converted) { converted.employeeId = converted.employee_id; delete converted.employee_id; }
+    if ('employee_name' in converted) { converted.employeeName = converted.employee_name; delete converted.employee_name; }
+    if ('clock_in' in converted) { converted.clockIn = converted.clock_in; delete converted.clock_in; }
+    if ('clock_in_raw' in converted) { converted.clockInRaw = converted.clock_in_raw; delete converted.clock_in_raw; }
+    if ('clock_out' in converted) { converted.clockOut = converted.clock_out; delete converted.clock_out; }
+    if ('clock_out_raw' in converted) { converted.clockOutRaw = converted.clock_out_raw; delete converted.clock_out_raw; }
+  }
+  
+  return converted;
+}
+
 // REST helper to upload items to Supabase using standard PostgREST bulk upsert
 async function uploadTable(tableName, items, settings) {
   if (items.length === 0) return true;
 
-  // Map items to inject restaurant_id for multi-tenant separation
-  const payload = items.map(item => ({
-    ...item,
-    restaurant_id: settings.restaurantId,
-    synced: true
-  }));
+  // Map items to inject restaurant_id and convert keys to snake_case
+  const payload = items.map(item => {
+    const snaked = toSnakeCase(item, tableName);
+    return {
+      ...snaked,
+      restaurant_id: settings.restaurantId,
+      synced: true
+    };
+  });
 
   const url = `${settings.url}/rest/v1/${tableName}?on_conflict=id`;
   const response = await fetch(url, {
@@ -69,11 +146,14 @@ async function downloadTable(tableName, settings) {
   }
 
   const remoteData = await response.json();
-  // Mark remote items as synced locally
-  return remoteData.map(item => ({
-    ...item,
-    synced: true
-  }));
+  // Mark remote items as synced locally and convert keys to camelCase
+  return remoteData.map(item => {
+    const cameled = toCamelCase(item, tableName);
+    return {
+      ...cameled,
+      synced: true
+    };
+  });
 }
 
 // Universal Sync Engine
