@@ -36,6 +36,13 @@ export default function App() {
   const [loginUser, setLoginUser] = useState('');
   const [loginPass, setLoginPass] = useState('');
   
+  // Profile settings states
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [profileName, setProfileName] = useState('');
+  const [profilePhone, setProfilePhone] = useState('');
+  const [profileUsername, setProfileUsername] = useState('');
+  const [profilePassword, setProfilePassword] = useState('');
+  
   // Data States
   const [tables, setTables] = useState([]);
   const [menu, setMenu] = useState([]);
@@ -301,6 +308,74 @@ export default function App() {
     }
   };
 
+  const handleUpdateProfile = async (updatedProfile) => {
+    // Check if username already exists in other accounts
+    const usernameConflict = employees.some(
+      emp => emp.username === updatedProfile.username.toLowerCase().trim() && emp.id !== updatedProfile.id
+    );
+    if (usernameConflict) {
+      addToast('Username already taken by another staff member', 'error');
+      return false;
+    }
+
+    // Update employees array
+    const updatedEmployees = employees.map(emp => 
+      emp.id === updatedProfile.id ? { ...emp, ...updatedProfile } : emp
+    );
+    setEmployees(updatedEmployees);
+    await db.employees.put({ ...employees.find(e => e.id === updatedProfile.id), ...updatedProfile });
+
+    // Update currentUser state
+    setCurrentUser({
+      ...currentUser,
+      name: updatedProfile.name,
+      username: updatedProfile.username.toLowerCase().trim(),
+      id: updatedProfile.id
+    });
+    
+    addToast('Profile updated successfully');
+    return true;
+  };
+
+  const handleOpenProfileModal = () => {
+    // Find the corresponding database record for the current user
+    const matchedEmployee = employees.find(emp => emp.username === currentUser.username) || {
+      id: currentUser.id || 'emp_admin',
+      name: currentUser.name,
+      username: currentUser.username,
+      phone: '9876543210',
+      password: 'admin123'
+    };
+    
+    setProfileName(matchedEmployee.name);
+    setProfilePhone(matchedEmployee.phone || '');
+    setProfileUsername(matchedEmployee.username);
+    setProfilePassword(matchedEmployee.password || '');
+    setShowProfileModal(true);
+  };
+
+  const handleSaveProfile = async (e) => {
+    e.preventDefault();
+    if (!profileName.trim() || !profilePhone.trim() || !profileUsername.trim() || !profilePassword.trim()) {
+      addToast('Please fill all required fields', 'warning');
+      return;
+    }
+
+    const targetId = currentUser.id || employees.find(emp => emp.username === currentUser.username)?.id || 'emp_admin';
+
+    const success = await handleUpdateProfile({
+      id: targetId,
+      name: profileName,
+      phone: profilePhone,
+      username: profileUsername,
+      password: profilePassword
+    });
+
+    if (success) {
+      setShowProfileModal(false);
+    }
+  };
+
   // --- POS Database Actions ---
 
   const handleUpdateTables = async (updatedTables) => {
@@ -502,7 +577,7 @@ export default function App() {
           <div className="header-actions">
             {/* Active User Display and Logout trigger */}
             <div className="user-profile-badge">
-              <span className="user-profile-name">👤 {currentUser.name}</span>
+              <span className="user-profile-name" onClick={handleOpenProfileModal} title="Click to edit profile">👤 {currentUser.name}</span>
               <button 
                 onClick={() => {
                   setCurrentUser(null);
@@ -598,6 +673,73 @@ export default function App() {
           )}
         </div>
       </main>
+
+      {/* Modal: Edit User Profile */}
+      {showProfileModal && (
+        <div className="overlay" style={{ zIndex: 10000 }}>
+          <div className="glass-panel modal-content" style={{ maxWidth: '400px' }}>
+            <div className="modal-header">
+              <h2>Edit Profile Info</h2>
+              <button className="close-btn" onClick={() => setShowProfileModal(false)}>×</button>
+            </div>
+            <form onSubmit={handleSaveProfile}>
+              <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <div className="form-group">
+                  <label>Full Name</label>
+                  <input
+                    type="text"
+                    required
+                    className="input-field"
+                    placeholder="e.g. John Doe"
+                    value={profileName}
+                    onChange={(e) => setProfileName(e.target.value)}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Phone Number</label>
+                  <input
+                    type="tel"
+                    required
+                    className="input-field"
+                    placeholder="e.g. 9876543210"
+                    value={profilePhone}
+                    onChange={(e) => setProfilePhone(e.target.value)}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Username</label>
+                  <input
+                    type="text"
+                    required
+                    className="input-field"
+                    placeholder="e.g. jdoe"
+                    value={profileUsername}
+                    onChange={(e) => setProfileUsername(e.target.value)}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Password</label>
+                  <input
+                    type="password"
+                    required
+                    className="input-field"
+                    placeholder="••••••••"
+                    value={profilePassword}
+                    onChange={(e) => setProfilePassword(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-secondary" onClick={() => setShowProfileModal(false)}>Cancel</button>
+                <button type="submit" className="btn btn-primary">Save Profile</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Global Toast Overlay Notifications */}
       <div className="toast-container">
