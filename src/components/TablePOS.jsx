@@ -137,7 +137,8 @@ export default function TablePOS({
           ...t,
           status: 'live',
           currentOrder: order,
-          billTotal: subtotal
+          billTotal: subtotal,
+          orderedBy: t.orderedBy || (currentUser ? currentUser.name : 'System')
         };
       }
       return t;
@@ -176,13 +177,14 @@ export default function TablePOS({
           }
         }
 
-        const subtotal = order.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+         const subtotal = order.reduce((sum, item) => sum + (item.price * item.quantity), 0);
         
         return {
           ...t,
           status: order.length === 0 ? 'empty' : 'live',
           currentOrder: order,
-          billTotal: subtotal
+          billTotal: subtotal,
+          orderedBy: order.length === 0 ? null : (t.orderedBy || (currentUser ? currentUser.name : 'System'))
         };
       }
       return t;
@@ -203,7 +205,8 @@ export default function TablePOS({
             currentOrder: [],
             billTotal: 0,
             discount: 0,
-            tax: 0
+            tax: 0,
+            orderedBy: null
           };
         }
         return t;
@@ -317,6 +320,7 @@ export default function TablePOS({
       total: finalTotal,
       paymentMethod: finalPaymentMethod,
       cashier: currentUser ? currentUser.name : 'Admin',
+      server_name: activeTable.orderedBy || (currentUser ? currentUser.name : 'System'),
       whatsappNumber: whatsappNumber || ''
     };
 
@@ -330,7 +334,8 @@ export default function TablePOS({
           billTotal: 0,
           discount: 0,
           taxType: 'GST_5',
-          tax: 0
+          tax: 0,
+          orderedBy: null
         };
       }
       return t;
@@ -411,6 +416,7 @@ export default function TablePOS({
       ctx.fillText(`Date: ${new Date(data.timestamp).toLocaleDateString()}`, 20, y); y += 20;
       ctx.fillText(`Time: ${new Date(data.timestamp).toLocaleTimeString()}`, 20, y); y += 20;
       ctx.fillText(`Table: ${data.tableName}`, 20, y); y += 20;
+      ctx.fillText(`Server: ${data.server_name || 'System'}`, 20, y); y += 20;
       ctx.fillText(`Cashier: ${data.cashier || 'Admin'}`, 20, y); y += 20;
       
       ctx.fillText('------------------------------------------', 20, y); y += 20;
@@ -953,7 +959,7 @@ export default function TablePOS({
                   <p>Time: {new Date(receiptData.timestamp).toLocaleTimeString()}</p>
                   <p>Bill ID: {receiptData.id}</p>
                   <p>Table: {receiptData.tableName}</p>
-                  <p>Served by: {receiptData.cashier || 'Admin'}</p>
+                  <p>Server: {receiptData.server_name || 'System'} | Cashier: {receiptData.cashier || 'Admin'}</p>
                 </div>
                 
                 <div className="receipt-items">
@@ -1034,9 +1040,8 @@ export default function TablePOS({
                       } else if (receiptData.tax > 0) {
                         taxText = `Tax (${receiptData.tax}%): ₹${(((receiptData.subtotal - (receiptData.subtotal * receiptData.discount) / 100) * receiptData.tax) / 100).toFixed(2)}\n`;
                       }
-                      
                       const storeName = localStorage.getItem('restaurantName') || 'PortablePOS';
-                      const message = `*--- ${storeName.toUpperCase()} E-BILL ---*\n*Bill ID:* ${receiptData.id}\n*Date:* ${new Date(receiptData.timestamp).toLocaleDateString()}\n*Time:* ${new Date(receiptData.timestamp).toLocaleTimeString()}\n*Table:* ${receiptData.tableName}\n-------------------------------------\n${itemsText}\n-------------------------------------\n*Subtotal:* ₹${receiptData.subtotal.toFixed(2)}\n${discountText}${taxText}*Grand Total:* ₹${receiptData.total.toFixed(2)}\n*Payment:* ${receiptData.paymentMethod}\n*Cashier:* ${receiptData.cashier || 'Admin'}\n-------------------------------------\nThank you for your visit!\nPowered by ${storeName}.`;
+                      const message = `*--- ${storeName.toUpperCase()} E-BILL ---*\n*Bill ID:* ${receiptData.id}\n*Date:* ${new Date(receiptData.timestamp).toLocaleDateString()}\n*Time:* ${new Date(receiptData.timestamp).toLocaleTimeString()}\n*Table:* ${receiptData.tableName}\n-------------------------------------\n${itemsText}\n-------------------------------------\n*Subtotal:* ₹${receiptData.subtotal.toFixed(2)}\n${discountText}${taxText}*Grand Total:* ₹${receiptData.total.toFixed(2)}\n*Payment:* ${receiptData.paymentMethod}\n*Server:* ${receiptData.server_name || 'System'}\n*Cashier:* ${receiptData.cashier || 'Admin'}\n-------------------------------------\nThank you for your visit!\nPowered by ${storeName}.`;
 
                       const url = `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(message)}`;
                       window.open(url, '_blank');
