@@ -509,6 +509,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  justify-content: flex-start; /* keeps items stacked at the top */
 }
 
 .empty-ticket {
@@ -531,6 +532,8 @@ body {
   background: rgba(0, 0, 0, 0.15);
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-color);
+  flex-shrink: 0; /* prevents vertical shrinking */
+  flex-grow: 0;   /* prevents vertical stretching */
 }
 
 .ticket-item-info {
