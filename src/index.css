@@ -267,9 +267,11 @@ body {
 /* Content Frame Scrollable */
 .content-body {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 24px;
   position: relative;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* Dashboard Styles */
@@ -385,6 +387,8 @@ body {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  height: 100%;
+  min-height: 0;
 }
 
 .filter-bar {
@@ -967,6 +971,7 @@ body {
 /* Custom Table View (Inventory & Employees lists) */
 .table-wrapper {
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
   border-radius: var(--radius-md);
   border: 1px solid var(--border-color);
   background: rgba(255, 255, 255, 0.01);
