@@ -35,6 +35,13 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [loginUser, setLoginUser] = useState('');
   const [loginPass, setLoginPass] = useState('');
+
+  // Cloud Linkage setup state
+  const [showCloudSetup, setShowCloudSetup] = useState(false);
+  const [cloudUrl, setCloudUrl] = useState('');
+  const [cloudKey, setCloudKey] = useState('');
+  const [cloudRestId, setCloudRestId] = useState('');
+  const [isVerifying, setIsVerifying] = useState(false);
   
   // Profile settings states
   const [showProfileModal, setShowProfileModal] = useState(false);
@@ -268,12 +275,109 @@ export default function App() {
   }, [isOnline]);
 
   // --- Login Handler ---
-  const handleLoginSubmit = (e) => {
+  const handleLoginSubmit = async (e) => {
     e.preventDefault();
     const u = loginUser.trim().toLowerCase();
     const p = loginPass.trim();
 
-    // Default Fallback Account
+    // 1. Cloud Linkage Setup Login Flow
+    if (showCloudSetup) {
+      if (!cloudUrl.trim() || !cloudKey.trim() || !cloudRestId.trim()) {
+        addToast('Please enter all cloud connection credentials', 'warning');
+        return;
+      }
+      
+      if (!isOnline) {
+        addToast('Internet connection required to link cloud database', 'error');
+        return;
+      }
+
+      setIsVerifying(true);
+      try {
+        const response = await fetch(`${cloudUrl.trim()}/rest/v1/employees?restaurant_id=eq.${encodeURIComponent(cloudRestId.trim())}`, {
+          method: 'GET',
+          headers: {
+            'apikey': cloudKey.trim(),
+            'Authorization': `Bearer ${cloudKey.trim()}`,
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (!response.ok) throw new Error(`Status ${response.status}: Connection failed`);
+        const remoteEmployees = await response.json();
+
+        const matched = remoteEmployees.find(emp => emp.username === u && emp.password === p && emp.status === 'active');
+        if (!matched && !(u === 'admin' && p === 'admin123')) {
+          addToast('Invalid credentials for this restaurant ID', 'error');
+          setIsVerifying(false);
+          return;
+        }
+
+        // Save cloud settings
+        saveSyncSettings(true, cloudUrl.trim(), cloudKey.trim(), cloudRestId.trim());
+        setSyncConfig({ enabled: true, url: cloudUrl.trim(), password: cloudKey.trim(), restaurantId: cloudRestId.trim() });
+        localStorage.setItem('db_seeded', 'true');
+
+        // Save employees list locally
+        await db.employees.clear();
+        await db.employees.putAll(remoteEmployees.map(emp => ({ ...emp, synced: true })));
+
+        if (matched) {
+          setCurrentUser({ name: matched.name, username: matched.username, role: matched.role, id: matched.id });
+          addToast(`Logged in successfully! Linked to: ${cloudRestId}`);
+        } else {
+          setCurrentUser({ name: 'System Manager', username: 'admin', role: 'Manager' });
+          addToast(`Logged in as Administrator! Linked to: ${cloudRestId}`);
+        }
+
+        // Pull other tables in the background
+        performCloudSync().then((result) => {
+          if (result.success) {
+            handleReloadDatabase();
+          }
+        });
+
+        setLoginUser('');
+        setLoginPass('');
+        setIsVerifying(false);
+        return;
+
+      } catch (err) {
+        addToast(`Connection failed: ${err.message}`, 'error');
+        setIsVerifying(false);
+        return;
+      }
+    }
+
+    // 2. Standard Login Flow (Check remote first if online and cloud is configured)
+    const settings = getSyncSettings();
+    let currentEmployees = employees;
+
+    if (settings.enabled && settings.url && isOnline) {
+      setIsVerifying(true);
+      try {
+        const response = await fetch(`${settings.url}/rest/v1/employees?restaurant_id=eq.${encodeURIComponent(settings.restaurantId)}`, {
+          method: 'GET',
+          headers: {
+            'apikey': settings.password,
+            'Authorization': `Bearer ${settings.password}`,
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (response.ok) {
+          const remoteEmployees = await response.json();
+          await db.employees.clear();
+          await db.employees.putAll(remoteEmployees.map(emp => ({ ...emp, synced: true })));
+          currentEmployees = remoteEmployees;
+        }
+      } catch (err) {
+        console.warn('Failed to fetch remote employees, falling back to local DB:', err);
+      }
+      setIsVerifying(false);
+    }
+
+    // Fallback account check
     if (u === 'admin' && p === 'admin123') {
       setCurrentUser({ name: 'System Manager', username: 'admin', role: 'Manager' });
       addToast('Logged in as Administrator');
@@ -282,8 +386,7 @@ export default function App() {
       return;
     }
 
-    // Lookup credentials in active employees table
-    const matched = employees.find(emp => emp.username === u && emp.password === p && emp.status === 'active');
+    const matched = currentEmployees.find(emp => emp.username === u && emp.password === p && emp.status === 'active');
     if (matched) {
       setCurrentUser({ name: matched.name, username: matched.username, role: matched.role, id: matched.id });
       addToast(`Welcome back, ${matched.name}!`);
@@ -452,16 +555,63 @@ export default function App() {
   if (!currentUser) {
     return (
       <div className="overlay" style={{ background: '#090d16', zIndex: 9999 }}>
-        <div className="glass-panel" style={{ width: '100%', maxWidth: '360px', padding: '30px', boxShadow: '0 20px 50px rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.07)' }}>
-          <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+        <div className="glass-panel" style={{ width: '100%', maxWidth: '380px', padding: '30px', boxShadow: '0 20px 50px rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.07)' }}>
+          <div style={{ textAlign: 'center', marginBottom: '20px' }}>
             <div style={{ width: '56px', height: '56px', borderRadius: 'var(--radius-md)', background: 'linear-gradient(135deg, var(--accent-indigo), var(--accent-teal))', display: 'inline-flex', alignItems: 'center', justifyItems: 'center', justifyContent: 'center', color: 'white', marginBottom: '16px', boxShadow: '0 0 25px rgba(99, 102, 241, 0.4)' }}>
               <Lock size={24} />
             </div>
             <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '24px', letterSpacing: '0.5px' }}>PortablePOS Security</h2>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginTop: '6px' }}>Enter credentials to start your shift</p>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginTop: '6px' }}>
+              {showCloudSetup ? 'Link your database and log in' : 'Enter credentials to start your shift'}
+            </p>
           </div>
 
-          <form onSubmit={handleLoginSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <form onSubmit={handleLoginSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            {showCloudSetup && (
+              <div style={{ padding: '12px', background: 'rgba(255,255,255,0.02)', borderRadius: 'var(--radius-sm)', border: '1px dashed var(--border-color)', display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '4px' }}>
+                <h4 style={{ fontSize: '12px', fontWeight: '600', color: 'var(--accent-teal)', margin: '0' }}>Cloud Database Settings</h4>
+                
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label style={{ fontSize: '10px' }}>Supabase Project URL</label>
+                  <input 
+                    type="url" 
+                    required={showCloudSetup}
+                    className="input-field" 
+                    placeholder="https://your-project.supabase.co" 
+                    value={cloudUrl}
+                    onChange={(e) => setCloudUrl(e.target.value)}
+                    style={{ padding: '6px 10px', fontSize: '12px' }}
+                  />
+                </div>
+
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label style={{ fontSize: '10px' }}>Supabase Anon Key</label>
+                  <input 
+                    type="password" 
+                    required={showCloudSetup}
+                    className="input-field" 
+                    placeholder="your-anon-key" 
+                    value={cloudKey}
+                    onChange={(e) => setCloudKey(e.target.value)}
+                    style={{ padding: '6px 10px', fontSize: '12px' }}
+                  />
+                </div>
+
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label style={{ fontSize: '10px' }}>Restaurant ID (Tenant ID)</label>
+                  <input 
+                    type="text" 
+                    required={showCloudSetup}
+                    className="input-field" 
+                    placeholder="e.g. delicious_deli" 
+                    value={cloudRestId}
+                    onChange={(e) => setCloudRestId(e.target.value)}
+                    style={{ padding: '6px 10px', fontSize: '12px' }}
+                  />
+                </div>
+              </div>
+            )}
+
             <div className="form-group">
               <label>Username</label>
               <input
@@ -487,13 +637,31 @@ export default function App() {
               />
             </div>
 
-            <button type="submit" className="btn btn-primary btn-full" style={{ marginTop: '10px', height: '42px' }}>
-              Verify & Unlock
+            <button type="submit" className="btn btn-primary btn-full" disabled={isVerifying} style={{ marginTop: '6px', height: '42px' }}>
+              {isVerifying ? 'Connecting Cloud...' : showCloudSetup ? 'Link & Login' : 'Verify & Unlock'}
             </button>
           </form>
 
-          <div style={{ marginTop: '20px', textAlign: 'center', fontSize: '11px', color: 'var(--text-muted)' }}>
-            Default Fallback: <code>admin</code> / <code>admin123</code>
+          <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <button 
+              className="btn btn-secondary btn-full" 
+              onClick={() => {
+                const settings = getSyncSettings();
+                if (!showCloudSetup) {
+                  setCloudUrl(settings.url || '');
+                  setCloudKey(settings.password || '');
+                  setCloudRestId(settings.restaurantId || '');
+                }
+                setShowCloudSetup(!showCloudSetup);
+              }}
+              style={{ fontSize: '11px', padding: '6px 12px' }}
+            >
+              {showCloudSetup ? 'Cancel Cloud Connection' : 'Connect New Restaurant (Cloud)'}
+            </button>
+
+            <div style={{ textAlign: 'center', fontSize: '10px', color: 'var(--text-muted)' }}>
+              Default Local Fallback: <code>admin</code> / <code>admin123</code>
+            </div>
           </div>
         </div>
         
