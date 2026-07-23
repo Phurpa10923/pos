@@ -13,6 +13,8 @@ export default function Settings({ addToast, onReloadDatabase }) {
   const [isSyncing, setIsSyncing] = useState(false);
   const [hasExistingConfig, setHasExistingConfig] = useState(false);
 
+  const [restaurantName, setRestaurantName] = useState(localStorage.getItem('restaurantName') || 'PortablePOS');
+
   // Load current configuration and compute local stats
   const loadStatsAndSettings = async () => {
     // Load local stats
@@ -208,6 +210,30 @@ export default function Settings({ addToast, onReloadDatabase }) {
       {/* Local DB Registers Panel */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
         
+        {/* Store Configuration Card */}
+        <div className="glass-panel" style={{ padding: '24px' }}>
+          <h2 className="section-title" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+            🏬 Store Settings
+          </h2>
+          <div className="form-group" style={{ marginBottom: '0' }}>
+            <label>Restaurant / Store Name</label>
+            <input 
+              type="text" 
+              className="input-field" 
+              placeholder="e.g. My Sweet Diner" 
+              value={restaurantName}
+              onChange={(e) => {
+                const name = e.target.value;
+                setRestaurantName(name);
+                localStorage.setItem('restaurantName', name);
+              }}
+            />
+            <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px', display: 'block' }}>
+              Customize your storefront name. This will be printed at the top of all physical receipts, WhatsApp text shares, and image shares.
+            </span>
+          </div>
+        </div>
+
         {/* Local DB Info Card */}
         <div className="glass-panel" style={{ padding: '24px' }}>
           <h2 className="section-title" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>

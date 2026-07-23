@@ -1,4 +1,4 @@
-const CACHE_NAME = 'aurapos-cache-v2';
+const CACHE_NAME = 'portablepos-cache-v2';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',

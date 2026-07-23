@@ -195,13 +195,13 @@ export default function App() {
         if (!persisted) {
           navigator.storage.persist().then((granted) => {
             if (granted) {
-              console.log('[AuraPOS] Persistent storage access granted by browser.');
+              console.log('[PortablePOS] Persistent storage access granted by browser.');
             } else {
-              console.log('[AuraPOS] Persistent storage access denied. Browser may evict data under storage pressure.');
+              console.log('[PortablePOS] Persistent storage access denied. Browser may evict data under storage pressure.');
             }
           });
         } else {
-          console.log('[AuraPOS] Storage is already persisted.');
+          console.log('[PortablePOS] Storage is already persisted.');
         }
       });
     }
@@ -251,7 +251,7 @@ export default function App() {
           setSales(loadedSales);
         }
       } catch (err) {
-        console.error('[AuraPOS Sync] Background sync failed:', err);
+        console.error('[PortablePOS Sync] Background sync failed:', err);
       }
     }, 30000);
 
@@ -448,7 +448,7 @@ export default function App() {
             <div style={{ width: '56px', height: '56px', borderRadius: 'var(--radius-md)', background: 'linear-gradient(135deg, var(--accent-indigo), var(--accent-teal))', display: 'inline-flex', alignItems: 'center', justifyItems: 'center', justifyContent: 'center', color: 'white', marginBottom: '16px', boxShadow: '0 0 25px rgba(99, 102, 241, 0.4)' }}>
               <Lock size={24} />
             </div>
-            <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '24px', letterSpacing: '0.5px' }}>AuraPOS Security</h2>
+            <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '24px', letterSpacing: '0.5px' }}>PortablePOS Security</h2>
             <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginTop: '6px' }}>Enter credentials to start your shift</p>
           </div>
 
@@ -507,7 +507,7 @@ export default function App() {
       <aside className={`app-sidebar ${sidebarOpen ? 'open' : ''}`}>
         <div className="sidebar-logo">
           <div className="logo-icon">POS</div>
-          <span className="logo-text">AuraPOS</span>
+          <span className="logo-text">PortablePOS</span>
           {sidebarOpen && (
             <button className="close-btn" style={{ marginLeft: 'auto' }} onClick={() => setSidebarOpen(false)}>
               <X size={20} />

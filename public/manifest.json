@@ -1,6 +1,6 @@
 {
-  "short_name": "AuraPOS",
-  "name": "AuraPOS - Offline Portability Suite",
+  "short_name": "PortablePOS",
+  "name": "PortablePOS - Offline Portability Suite",
   "description": "Premium offline-first POS billing, inventory manager, employee registers, and dining bill supervisor.",
   "icons": [
     {

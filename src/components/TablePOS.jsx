@@ -374,6 +374,152 @@ export default function TablePOS({
     window.print();
   };
 
+  const generateReceiptImageBlob = (data) => {
+    return new Promise((resolve) => {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      const storeName = localStorage.getItem('restaurantName') || 'PortablePOS';
+      
+      const width = 400;
+      const itemHeight = 25;
+      const headerHeight = 180;
+      const footerHeight = 180;
+      const height = headerHeight + (data.items.length * itemHeight) + footerHeight;
+      
+      canvas.width = width;
+      canvas.height = height;
+      
+      // Draw background
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, width, height);
+      
+      // Text color & settings
+      ctx.fillStyle = '#1e293b';
+      ctx.textAlign = 'center';
+      
+      // Header
+      ctx.font = 'bold 20px monospace';
+      ctx.fillText(storeName.toUpperCase(), width / 2, 45);
+      
+      ctx.font = '12px monospace';
+      ctx.fillText('OFFLINE RECEIPT', width / 2, 65);
+      
+      ctx.textAlign = 'left';
+      ctx.font = '12px monospace';
+      let y = 95;
+      ctx.fillText(`Bill ID: ${data.id}`, 20, y); y += 20;
+      ctx.fillText(`Date: ${new Date(data.timestamp).toLocaleDateString()}`, 20, y); y += 20;
+      ctx.fillText(`Time: ${new Date(data.timestamp).toLocaleTimeString()}`, 20, y); y += 20;
+      ctx.fillText(`Table: ${data.tableName}`, 20, y); y += 20;
+      ctx.fillText(`Cashier: ${data.cashier || 'Admin'}`, 20, y); y += 20;
+      
+      ctx.fillText('------------------------------------------', 20, y); y += 20;
+      
+      // Column headers
+      ctx.font = 'bold 12px monospace';
+      ctx.fillText('Item Description', 20, y);
+      ctx.textAlign = 'right';
+      ctx.fillText('Amount', width - 20, y);
+      ctx.textAlign = 'left';
+      ctx.font = '12px monospace';
+      y += 20;
+      ctx.fillText('------------------------------------------', 20, y); y += 20;
+      
+      // Items
+      data.items.forEach(item => {
+        ctx.fillText(`${item.name} x ${item.quantity}`, 20, y);
+        ctx.textAlign = 'right';
+        ctx.fillText(`₹${(item.price * item.quantity).toFixed(2)}`, width - 20, y);
+        ctx.textAlign = 'left';
+        y += itemHeight;
+      });
+      
+      ctx.fillText('------------------------------------------', 20, y); y += 20;
+      
+      // Totals
+      ctx.fillText(`Subtotal:`, 20, y);
+      ctx.textAlign = 'right';
+      ctx.fillText(`₹${data.subtotal.toFixed(2)}`, width - 20, y);
+      ctx.textAlign = 'left';
+      y += 20;
+      
+      if (data.discount > 0) {
+        ctx.fillText(`Discount (${data.discount}%):`, 20, y);
+        ctx.textAlign = 'right';
+        ctx.fillText(`-₹${((data.subtotal * data.discount) / 100).toFixed(2)}`, width - 20, y);
+        ctx.textAlign = 'left';
+        y += 20;
+      }
+      
+      if (data.taxBreakdown && data.taxBreakdown.length > 0) {
+        data.taxBreakdown.forEach(taxItem => {
+          ctx.fillText(`${taxItem.label}:`, 20, y);
+          ctx.textAlign = 'right';
+          ctx.fillText(`₹${taxItem.amount.toFixed(2)}`, width - 20, y);
+          ctx.textAlign = 'left';
+          y += 20;
+        });
+      } else if (data.tax > 0) {
+        ctx.fillText(`Tax (${data.tax}%):`, 20, y);
+        ctx.textAlign = 'right';
+        ctx.fillText(`₹${(((data.subtotal - (data.subtotal * data.discount) / 100) * data.tax) / 100).toFixed(2)}`, width - 20, y);
+        ctx.textAlign = 'left';
+        y += 20;
+      }
+      
+      ctx.font = 'bold 14px monospace';
+      ctx.fillText(`Grand Total:`, 20, y);
+      ctx.textAlign = 'right';
+      ctx.fillText(`₹${data.total.toFixed(2)}`, width - 20, y);
+      ctx.textAlign = 'left';
+      y += 30;
+      
+      ctx.textAlign = 'center';
+      ctx.font = 'italic 12px monospace';
+      ctx.fillText('Thank you for your visit!', width / 2, y); y += 20;
+      ctx.fillText('Powered by PortablePOS', width / 2, y);
+      
+      canvas.toBlob((blob) => {
+        resolve(blob);
+      }, 'image/png');
+    });
+  };
+
+  const handleDownloadReceiptImage = async () => {
+    if (!receiptData) return;
+    const blob = await generateReceiptImageBlob(receiptData);
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Bill-${receiptData.id}.png`;
+    link.click();
+    URL.revokeObjectURL(url);
+    addToast('Receipt downloaded as PNG image');
+  };
+
+  const handleShareReceiptImage = async () => {
+    if (!receiptData) return;
+    try {
+      const storeName = localStorage.getItem('restaurantName') || 'PortablePOS';
+      const blob = await generateReceiptImageBlob(receiptData);
+      const file = new File([blob], `Bill-${receiptData.id}.png`, { type: 'image/png' });
+      
+      if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          title: `Bill ${receiptData.id}`,
+          text: `Here is your e-bill from ${storeName} for ₹${receiptData.total.toFixed(2)}`
+        });
+        addToast('Shared successfully');
+      } else {
+        handleDownloadReceiptImage();
+      }
+    } catch (err) {
+      console.error('Sharing failed:', err);
+      handleDownloadReceiptImage();
+    }
+  };
+
   return (
     <div className="pos-layout">
       {/* Tables Grid View (Left side) */}
@@ -802,7 +948,7 @@ export default function TablePOS({
             <div className="modal-body" style={{ maxHeight: '60vh', overflowY: 'auto' }}>
               <div className="receipt-preview">
                 <div className="receipt-header">
-                  <h3>AURAPOS BILLING</h3>
+                  <h3>{(localStorage.getItem('restaurantName') || 'PortablePOS').toUpperCase()}</h3>
                   <p>Date: {new Date(receiptData.timestamp).toLocaleDateString()}</p>
                   <p>Time: {new Date(receiptData.timestamp).toLocaleTimeString()}</p>
                   <p>Bill ID: {receiptData.id}</p>
@@ -853,7 +999,7 @@ export default function TablePOS({
 
                 <div className="receipt-footer">
                   <p>Thank You For Your Visit!</p>
-                  <p>AuraPOS Offline System</p>
+                  <p>{localStorage.getItem('restaurantName') || 'PortablePOS'} Offline System</p>
                 </div>
               </div>
 
@@ -889,7 +1035,8 @@ export default function TablePOS({
                         taxText = `Tax (${receiptData.tax}%): ₹${(((receiptData.subtotal - (receiptData.subtotal * receiptData.discount) / 100) * receiptData.tax) / 100).toFixed(2)}\n`;
                       }
                       
-                      const message = `*--- AuraPOS E-BILL ---*\n*Bill ID:* ${receiptData.id}\n*Date:* ${new Date(receiptData.timestamp).toLocaleDateString()}\n*Time:* ${new Date(receiptData.timestamp).toLocaleTimeString()}\n*Table:* ${receiptData.tableName}\n-------------------------------------\n${itemsText}\n-------------------------------------\n*Subtotal:* ₹${receiptData.subtotal.toFixed(2)}\n${discountText}${taxText}*Grand Total:* ₹${receiptData.total.toFixed(2)}\n*Payment:* ${receiptData.paymentMethod}\n*Cashier:* ${receiptData.cashier || 'Admin'}\n-------------------------------------\nThank you for your visit!\nPowered by AuraPOS.`;
+                      const storeName = localStorage.getItem('restaurantName') || 'PortablePOS';
+                      const message = `*--- ${storeName.toUpperCase()} E-BILL ---*\n*Bill ID:* ${receiptData.id}\n*Date:* ${new Date(receiptData.timestamp).toLocaleDateString()}\n*Time:* ${new Date(receiptData.timestamp).toLocaleTimeString()}\n*Table:* ${receiptData.tableName}\n-------------------------------------\n${itemsText}\n-------------------------------------\n*Subtotal:* ₹${receiptData.subtotal.toFixed(2)}\n${discountText}${taxText}*Grand Total:* ₹${receiptData.total.toFixed(2)}\n*Payment:* ${receiptData.paymentMethod}\n*Cashier:* ${receiptData.cashier || 'Admin'}\n-------------------------------------\nThank you for your visit!\nPowered by ${storeName}.`;
 
                       const url = `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(message)}`;
                       window.open(url, '_blank');
@@ -903,11 +1050,21 @@ export default function TablePOS({
               </div>
 
             </div>
-            <div className="modal-footer" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-              <button className="btn btn-secondary" onClick={handlePrint}>
-                Print Receipt
-              </button>
-              <button className="btn btn-primary" onClick={() => { setShowReceiptModal(false); setWhatsappNumber(''); }}>
+            <div className="modal-footer" style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', width: '100%' }}>
+                <button className="btn btn-secondary" onClick={() => handleDownloadReceiptImage()}>
+                  💾 Save Bill Image
+                </button>
+                {navigator.share && (
+                  <button className="btn btn-secondary" onClick={() => handleShareReceiptImage()}>
+                    📤 Share Bill Image
+                  </button>
+                )}
+                <button className="btn btn-secondary" onClick={handlePrint} style={{ gridColumn: navigator.share ? 'span 2' : 'span 1' }}>
+                  🖨️ Print Receipt
+                </button>
+              </div>
+              <button className="btn btn-primary btn-full" onClick={() => { setShowReceiptModal(false); setWhatsappNumber(''); }}>
                 Done
               </button>
             </div>
