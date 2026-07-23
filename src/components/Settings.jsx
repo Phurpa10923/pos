@@ -4,7 +4,7 @@ import { getSyncSettings, saveSyncSettings, performCloudSync } from '../sync';
 import { db } from '../db';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../config';
 
-export default function Settings({ addToast, onReloadDatabase }) {
+export default function Settings({ addToast, onReloadDatabase, isOnline = navigator.onLine, syncConfig = getSyncSettings() }) {
   const [syncEnabled, setSyncEnabled] = useState(false);
   const [syncUrl, setSyncUrl] = useState('');
   const [syncPassword, setSyncPassword] = useState('');
@@ -421,6 +421,35 @@ export default function Settings({ addToast, onReloadDatabase }) {
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {/* Cloud Diagnostics Section */}
+            <div style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', padding: '14px', marginBottom: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--accent-teal)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '2px' }}>Cloud Connectivity Diagnostics</div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Sync Engine Status:</span>
+                <span style={{ fontWeight: 'bold', color: syncConfig.enabled ? 'var(--accent-emerald)' : 'var(--accent-amber)' }}>
+                  {syncConfig.enabled ? 'ENABLED' : 'DISABLED'}
+                </span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Network Connection:</span>
+                <span style={{ fontWeight: 'bold', color: isOnline ? 'var(--accent-emerald)' : 'var(--accent-amber)' }}>
+                  {isOnline ? 'ONLINE' : 'OFFLINE'}
+                </span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Active Restaurant ID:</span>
+                <span style={{ fontWeight: 'bold', color: 'var(--text-primary)' }}>
+                  {syncConfig.restaurantId || '(none)'}
+                </span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Unsynced Local Actions:</span>
+                <span style={{ fontWeight: 'bold', color: unsyncedCount > 0 ? 'var(--accent-amber)' : 'var(--accent-emerald)' }}>
+                  {unsyncedCount} records
+                </span>
+              </div>
+            </div>
+
             {syncEnabled && (
               <button 
                 className="btn btn-secondary btn-full" 

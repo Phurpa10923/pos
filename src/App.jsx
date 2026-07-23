@@ -1065,6 +1065,8 @@ export default function App() {
             <SettingsTab
               addToast={addToast}
               onReloadDatabase={handleReloadDatabase}
+              isOnline={isOnline}
+              syncConfig={syncConfig}
             />
           )}
         </div>
