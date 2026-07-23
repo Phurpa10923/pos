@@ -141,3 +141,100 @@ export async function performCloudSync(addToast) {
     return { success: false, reason: error.message };
   }
 }
+
+// Establishes a lightweight Phoenix Channel WebSocket connection to Supabase Realtime
+// listening for Postgres changes on the restaurant's partitioned data.
+export function startRealtimeSync(onUpdate) {
+  const settings = getSyncSettings();
+  if (!settings.enabled || !settings.url || !settings.password || !settings.restaurantId) {
+    return () => {};
+  }
+
+  // Extract project ref from URL: https://xxxx.supabase.co -> xxxx
+  const match = settings.url.match(/https:\/\/([^.]+)\.supabase\.co/);
+  if (!match) return () => {};
+  const projectRef = match[1];
+
+  const wsUrl = `wss://${projectRef}.supabase.co/realtime/v1/websocket?apikey=${settings.password}&vsn=1.0.0`;
+  let socket = null;
+  let heartbeatInterval = null;
+  let isClosed = false;
+
+  function connect() {
+    if (isClosed) return;
+    if (socket) {
+      try { socket.close(); } catch (e) {}
+    }
+
+    socket = new WebSocket(wsUrl);
+
+    socket.onopen = () => {
+      console.log('[PortablePOS Realtime] Connected to Supabase Realtime WebSocket');
+      
+      // Join the Postgres changes channel for this specific restaurant ID
+      socket.send(JSON.stringify({
+        topic: 'realtime:public',
+        event: 'phx_join',
+        payload: {
+          config: {
+            postgres_changes: [
+              { event: '*', schema: 'public', table: 'menu', filter: `restaurant_id=eq.${settings.restaurantId}` },
+              { event: '*', schema: 'public', table: 'inventory', filter: `restaurant_id=eq.${settings.restaurantId}` },
+              { event: '*', schema: 'public', table: 'employees', filter: `restaurant_id=eq.${settings.restaurantId}` },
+              { event: '*', schema: 'public', table: 'attendance', filter: `restaurant_id=eq.${settings.restaurantId}` },
+              { event: '*', schema: 'public', table: 'sales', filter: `restaurant_id=eq.${settings.restaurantId}` }
+            ]
+          }
+        },
+        ref: '1'
+      }));
+
+      // Phoenix heartbeat every 30 seconds to keep connection alive
+      if (heartbeatInterval) clearInterval(heartbeatInterval);
+      heartbeatInterval = setInterval(() => {
+        if (socket && socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({
+            topic: 'phoenix',
+            event: 'heartbeat',
+            payload: {},
+            ref: 'hb_' + Date.now()
+          }));
+        }
+      }, 30000);
+    };
+
+    socket.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        if (msg.event === 'postgres_changes') {
+          console.log('[PortablePOS Realtime] Remote database update detected in:', msg.payload?.table);
+          onUpdate(msg.payload?.table);
+        }
+      } catch (err) {
+        console.error('[PortablePOS Realtime] Error parsing socket payload:', err);
+      }
+    };
+
+    socket.onclose = () => {
+      if (heartbeatInterval) clearInterval(heartbeatInterval);
+      if (!isClosed) {
+        console.log('[PortablePOS Realtime] WebSocket closed. Reconnecting in 5 seconds...');
+        setTimeout(connect, 5000);
+      }
+    };
+
+    socket.onerror = (err) => {
+      console.error('[PortablePOS Realtime] WebSocket error:', err);
+    };
+  }
+
+  connect();
+
+  return () => {
+    isClosed = true;
+    if (heartbeatInterval) clearInterval(heartbeatInterval);
+    if (socket) {
+      try { socket.close(); } catch (e) {}
+    }
+  };
+}

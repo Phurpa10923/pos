@@ -8,7 +8,7 @@ import Employees from './components/Employees';
 import Reports from './components/Reports';
 import SettingsTab from './components/Settings';
 
-import { getSyncSettings, saveSyncSettings, performCloudSync } from './sync';
+import { getSyncSettings, saveSyncSettings, performCloudSync, startRealtimeSync } from './sync';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config';
 
 import { 
@@ -242,18 +242,18 @@ export default function App() {
     }
   }, [currentUser]);
 
-  // Background Cloud Sync Loop (Runs silently every 30 seconds if online)
+  // Background Cloud Sync & Realtime WebSockets Loop
   useEffect(() => {
     const settings = getSyncSettings();
     if (!settings.enabled || !isOnline) return;
 
-    const interval = setInterval(async () => {
+    // Helper to perform sync and silently reload local state in background
+    const triggerSync = async () => {
       try {
         const result = await performCloudSync();
         if (result.success && result.count > 0) {
-          console.log(`[AuraPOS Sync] Auto-synced ${result.count} records to cloud database.`);
+          console.log(`[PortablePOS Sync] Auto-synced ${result.count} records silently.`);
           
-          // Silently reload local state in background to sync flags
           const loadedMenu = await db.menu.getAll();
           setMenu(loadedMenu);
           const loadedInventory = await db.inventory.getAll();
@@ -269,12 +269,24 @@ export default function App() {
           setSales(loadedSales);
         }
       } catch (err) {
-        console.error('[PortablePOS Sync] Background sync failed:', err);
+        console.error('[PortablePOS Sync] Silent sync failed:', err);
       }
-    }, 30000);
+    };
 
-    return () => clearInterval(interval);
-  }, [isOnline]);
+    // 1. Establish Real-time WebSocket connection to Supabase Postgres Changes
+    const stopRealtime = startRealtimeSync((tableName) => {
+      console.log(`[PortablePOS Realtime] Triggering cloud sync for table: ${tableName}`);
+      triggerSync();
+    });
+
+    // 2. Periodical fallback loop (60s check for database state integrity)
+    const interval = setInterval(triggerSync, 60000);
+
+    return () => {
+      clearInterval(interval);
+      if (stopRealtime) stopRealtime();
+    };
+  }, [isOnline, currentUser]);
 
   // --- Login Handler ---
   const handleLoginSubmit = async (e) => {

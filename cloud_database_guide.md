@@ -128,6 +128,14 @@ CREATE POLICY "Allow public read/write access" ON public.menu FOR ALL USING (tru
 CREATE POLICY "Allow public read/write access" ON public.employees FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow public read/write access" ON public.attendance FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow public read/write access" ON public.sales FOR ALL USING (true) WITH CHECK (true);
+
+-- 8. Enable Realtime Replication for instant multi-device syncing
+alter publication supabase_realtime add table public.restaurants;
+alter publication supabase_realtime add table public.inventory;
+alter publication supabase_realtime add table public.menu;
+alter publication supabase_realtime add table public.employees;
+alter publication supabase_realtime add table public.attendance;
+alter publication supabase_realtime add table public.sales;
 ```
 
 4. Click **Run** in the top right. You should see a message saying "Success". Your cloud tables are now fully provisioned and ready for real-time traffic.
