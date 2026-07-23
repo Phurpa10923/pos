@@ -92,6 +92,25 @@ export async function performCloudSync(addToast) {
     const localEmployees = await db.employees.getAll();
     const localAttendance = await db.attendance.getAll();
 
+    // 0. Sync deletions first to clear them from remote database
+    const deletedRecords = await db.deleted_records.getAll();
+    for (const record of deletedRecords) {
+      try {
+        const deleteResponse = await fetch(`${settings.url}/rest/v1/${record.table}?id=eq.${encodeURIComponent(record.recordId)}&restaurant_id=eq.${encodeURIComponent(settings.restaurantId)}`, {
+          method: 'DELETE',
+          headers: {
+            'apikey': settings.password,
+            'Authorization': `Bearer ${settings.password}`
+          }
+        });
+        if (deleteResponse.ok) {
+          await db.deleted_records.delete(record.id);
+        }
+      } catch (err) {
+        console.warn(`[PortablePOS Sync] Failed to delete record ${record.recordId} on remote:`, err);
+      }
+    }
+
     const unsyncedMenu = localMenu.filter(item => !item.synced);
     const unsyncedInventory = localInventory.filter(item => !item.synced);
     const unsyncedSales = localSales.filter(item => !item.synced);

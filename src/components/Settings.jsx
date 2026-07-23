@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Save, Cloud, RefreshCw, Database, Download, Upload, Trash2, ShieldCheck, AlertTriangle } from 'lucide-react';
 import { getSyncSettings, saveSyncSettings, performCloudSync } from '../sync';
 import { db } from '../db';
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from '../config';
 
 export default function Settings({ addToast, onReloadDatabase }) {
   const [syncEnabled, setSyncEnabled] = useState(false);
@@ -60,12 +61,16 @@ export default function Settings({ addToast, onReloadDatabase }) {
 
   const handleSaveSettings = (e) => {
     if (e && e.preventDefault) e.preventDefault();
+    
+    const activeUrl = (SUPABASE_URL || syncUrl).trim();
+    const activePassword = (SUPABASE_ANON_KEY || syncPassword).trim();
+
     if (syncEnabled) {
-      if (!syncUrl.trim()) {
+      if (!activeUrl) {
         addToast('Supabase URL is required', 'warning');
         return;
       }
-      if (!syncPassword.trim()) {
+      if (!activePassword) {
         addToast('Supabase Anon Key is required', 'warning');
         return;
       }
@@ -74,7 +79,7 @@ export default function Settings({ addToast, onReloadDatabase }) {
         return;
       }
     }
-    saveSyncSettings(syncEnabled, syncUrl, syncPassword, restaurantId);
+    saveSyncSettings(syncEnabled, activeUrl, activePassword, restaurantId);
     addToast('Cloud connection settings updated successfully');
     loadStatsAndSettings();
     if (onReloadDatabase) onReloadDatabase(); // Notify App to refresh badge
@@ -278,29 +283,33 @@ export default function Settings({ addToast, onReloadDatabase }) {
 
             {syncEnabled && (
               <>
-                <div className="form-group">
-                  <label>Supabase Project URL *</label>
-                  <input 
-                    type="url" 
-                    className="input-field" 
-                    placeholder="https://your-project.supabase.co" 
-                    value={syncUrl}
-                    onChange={(e) => setSyncUrl(e.target.value)}
-                  />
-                  <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Found under Settings &gt; API in your Supabase Dashboard</span>
-                </div>
+                {(!SUPABASE_URL || !SUPABASE_ANON_KEY) && (
+                  <>
+                    <div className="form-group">
+                      <label>Supabase Project URL *</label>
+                      <input 
+                        type="url" 
+                        className="input-field" 
+                        placeholder="https://your-project.supabase.co" 
+                        value={syncUrl}
+                        onChange={(e) => setSyncUrl(e.target.value)}
+                      />
+                      <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Found under Settings &gt; API in your Supabase Dashboard</span>
+                    </div>
 
-                <div className="form-group">
-                  <label>Supabase Anon Key *</label>
-                  <input 
-                    type="password" 
-                    className="input-field" 
-                    placeholder="your-anon-key-jwt" 
-                    value={syncPassword}
-                    onChange={(e) => setSyncPassword(e.target.value)}
-                  />
-                  <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Found under Settings &gt; API &gt; Project API keys in Supabase</span>
-                </div>
+                    <div className="form-group">
+                      <label>Supabase Anon Key *</label>
+                      <input 
+                        type="password" 
+                        className="input-field" 
+                        placeholder="your-anon-key-jwt" 
+                        value={syncPassword}
+                        onChange={(e) => setSyncPassword(e.target.value)}
+                      />
+                      <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Found under Settings &gt; API &gt; Project API keys in Supabase</span>
+                    </div>
+                  </>
+                )}
 
                 <div className="form-group">
                   <label>Restaurant / Store ID (Tenant ID) *</label>

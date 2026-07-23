@@ -1,5 +1,5 @@
 const DB_NAME = 'PortablePOS_DB';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 // Helper to open connection
 function getDB() {
@@ -36,6 +36,11 @@ function getDB() {
       if (!db.objectStoreNames.contains('attendance')) {
         const attStore = db.createObjectStore('attendance', { keyPath: 'id' });
         attStore.createIndex('date', 'date', { unique: false });
+      }
+
+      // Store 7: Deleted Records Tracker (for offline-first synchronization)
+      if (!db.objectStoreNames.contains('deleted_records')) {
+        db.createObjectStore('deleted_records', { keyPath: 'id' });
       }
     };
   });
@@ -202,6 +207,26 @@ export const db = {
       const enriched = entries.map(e => ({ ...e, synced: e.synced === true }));
       enriched.forEach(e => store.put(e));
       return enriched;
+    })
+  },
+  
+  // DELETED RECORDS STORE
+  deleted_records: {
+    add: (record) => transaction('deleted_records', 'readwrite', (store) => {
+      store.put(record);
+      return record;
+    }),
+    getAll: () => transaction('deleted_records', 'readonly', (store) => {
+      const req = store.getAll();
+      return new Promise((resolve) => req.onsuccess = () => resolve(req.result));
+    }),
+    delete: (id) => transaction('deleted_records', 'readwrite', (store) => {
+      store.delete(id);
+      return true;
+    }),
+    clear: () => transaction('deleted_records', 'readwrite', (store) => {
+      store.clear();
+      return true;
     })
   }
 };

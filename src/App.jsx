@@ -569,37 +569,113 @@ export default function App() {
 
   const handleUpdateMenu = async (updatedMenu) => {
     setMenu(updatedMenu);
-    await db.menu.putAll(updatedMenu);
+    
+    // Track deletions for Cloud Sync
+    const currentList = await db.menu.getAll();
+    const idsToKeep = updatedMenu.map(item => item.id);
+    for (const item of currentList) {
+      if (!idsToKeep.includes(item.id)) {
+        await db.menu.delete(item.id);
+        if (syncConfig.enabled) {
+          await db.deleted_records.add({
+            id: 'del_menu_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+            table: 'menu',
+            recordId: item.id
+          });
+        }
+      }
+    }
+
+    // Save and tag with restaurant_id
+    for (const item of updatedMenu) {
+      const enrichedItem = {
+        ...item,
+        restaurant_id: syncConfig.restaurantId || item.restaurant_id || 'my_restaurant',
+        synced: item.synced === true
+      };
+      await db.menu.put(enrichedItem);
+    }
   };
 
   const handleUpdateInventory = async (updatedInventory) => {
     setInventory(updatedInventory);
-    await db.inventory.putAll(updatedInventory);
+
+    // Track deletions for Cloud Sync
+    const currentList = await db.inventory.getAll();
+    const idsToKeep = updatedInventory.map(item => item.id);
+    for (const item of currentList) {
+      if (!idsToKeep.includes(item.id)) {
+        await db.inventory.delete(item.id);
+        if (syncConfig.enabled) {
+          await db.deleted_records.add({
+            id: 'del_inv_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+            table: 'inventory',
+            recordId: item.id
+          });
+        }
+      }
+    }
+
+    // Save and tag with restaurant_id
+    for (const item of updatedInventory) {
+      const enrichedItem = {
+        ...item,
+        restaurant_id: syncConfig.restaurantId || item.restaurant_id || 'my_restaurant',
+        synced: item.synced === true
+      };
+      await db.inventory.put(enrichedItem);
+    }
   };
 
   const handleAddSale = async (newSale) => {
-    setSales(prev => [...prev, newSale]);
-    await db.sales.add(newSale);
+    const enrichedSale = {
+      ...newSale,
+      restaurant_id: syncConfig.restaurantId || 'my_restaurant',
+      synced: newSale.synced === true
+    };
+    setSales(prev => [...prev, enrichedSale]);
+    await db.sales.add(enrichedSale);
   };
 
   const handleSeedSales = async (seededSales) => {
     setSales(seededSales);
     for (const sale of seededSales) {
-      await db.sales.add(sale);
+      const enrichedSale = {
+        ...sale,
+        restaurant_id: syncConfig.restaurantId || 'my_restaurant',
+        synced: sale.synced === true
+      };
+      await db.sales.add(enrichedSale);
     }
   };
 
   const handleUpdateEmployees = async (updatedEmployees) => {
     setEmployees(updatedEmployees);
+
+    // Track deletions for Cloud Sync
     const currentList = await db.employees.getAll();
     const idsToKeep = updatedEmployees.map(e => e.id);
     for (const item of currentList) {
       if (!idsToKeep.includes(item.id)) {
         await db.employees.delete(item.id);
+        if (syncConfig.enabled) {
+          await db.deleted_records.add({
+            id: 'del_emp_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+            table: 'employees',
+            recordId: item.id
+          });
+        }
       }
     }
+
+    // Save and tag with restaurant_id
     for (const item of updatedEmployees) {
-      await db.employees.put(item);
+      const enrichedItem = {
+        ...item,
+        restaurant_id: syncConfig.restaurantId || item.restaurant_id || 'my_restaurant',
+        synced: item.synced === true
+      };
+      await db.employees.put(enrichedItem);
     }
   };
 
