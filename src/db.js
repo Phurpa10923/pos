@@ -80,6 +80,10 @@ export const db = {
       const enriched = items.map(i => ({ ...i, synced: i.synced === true }));
       enriched.forEach(i => store.put(i));
       return enriched;
+    }),
+    clear: () => transaction('menu', 'readwrite', (store) => {
+      store.clear();
+      return true;
     })
   },
 
@@ -102,6 +106,10 @@ export const db = {
       const enriched = items.map(i => ({ ...i, synced: i.synced === true }));
       enriched.forEach(i => store.put(i));
       return enriched;
+    }),
+    clear: () => transaction('inventory', 'readwrite', (store) => {
+      store.clear();
+      return true;
     })
   },
 
@@ -122,6 +130,10 @@ export const db = {
     putAll: (tables) => transaction('tables', 'readwrite', (store) => {
       tables.forEach(t => store.put(t));
       return tables;
+    }),
+    clear: () => transaction('tables', 'readwrite', (store) => {
+      store.clear();
+      return true;
     })
   },
 
