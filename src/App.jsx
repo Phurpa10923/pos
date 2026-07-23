@@ -594,10 +594,19 @@ export default function App() {
 
     // Save and tag with restaurant_id
     for (const item of updatedMenu) {
+      const oldItem = menu.find(m => m.id === item.id);
+      const hasChanged = !oldItem || 
+        oldItem.name !== item.name ||
+        oldItem.price !== item.price ||
+        oldItem.category !== item.category ||
+        oldItem.inventoryId !== item.inventoryId ||
+        oldItem.inventoryQty !== item.inventoryQty ||
+        oldItem.available !== item.available;
+
       const enrichedItem = {
         ...item,
         restaurant_id: syncConfig.restaurantId || item.restaurant_id || 'my_restaurant',
-        synced: item.synced === true
+        synced: hasChanged ? false : (item.synced === true)
       };
       await db.menu.put(enrichedItem);
     }
@@ -625,10 +634,18 @@ export default function App() {
 
     // Save and tag with restaurant_id
     for (const item of updatedInventory) {
+      const oldItem = inventory.find(i => i.id === item.id);
+      const hasChanged = !oldItem || 
+        oldItem.name !== item.name ||
+        oldItem.stock !== item.stock ||
+        oldItem.unit !== item.unit ||
+        oldItem.minStock !== item.minStock ||
+        oldItem.costPrice !== item.costPrice;
+
       const enrichedItem = {
         ...item,
         restaurant_id: syncConfig.restaurantId || item.restaurant_id || 'my_restaurant',
-        synced: item.synced === true
+        synced: hasChanged ? false : (item.synced === true)
       };
       await db.inventory.put(enrichedItem);
     }
@@ -688,10 +705,19 @@ export default function App() {
 
     // Save and tag with restaurant_id
     for (const item of updatedEmployees) {
+      const oldItem = employees.find(e => e.id === item.id);
+      const hasChanged = !oldItem || 
+        oldItem.name !== item.name ||
+        oldItem.role !== item.role ||
+        oldItem.phone !== item.phone ||
+        oldItem.username !== item.username ||
+        oldItem.password !== item.password ||
+        oldItem.status !== item.status;
+
       const enrichedItem = {
         ...item,
         restaurant_id: syncConfig.restaurantId || item.restaurant_id || 'my_restaurant',
-        synced: item.synced === true
+        synced: hasChanged ? false : (item.synced === true)
       };
       await db.employees.put(enrichedItem);
 
