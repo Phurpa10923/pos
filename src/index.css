@@ -347,6 +347,26 @@ body {
   gap: 8px;
 }
 
+.pos-split {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  gap: 16px;
+  overflow: hidden;
+}
+
+.pos-split > .catalog-pane {
+  flex: 1.2;
+  min-height: 0;
+  height: auto;
+}
+
+.pos-split > .ticket-pane {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+}
+
 /* Tables grid (POS screen) */
 .pos-layout {
   display: grid;
