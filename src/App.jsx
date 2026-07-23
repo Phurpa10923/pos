@@ -416,10 +416,10 @@ export default function App() {
       setIsVerifying(false);
     }
 
-    // Fallback account check
-    if (u === 'admin' && p === 'admin123') {
-      setCurrentUser({ name: 'System Manager', username: 'admin', role: 'Manager' });
-      addToast('Logged in as Administrator');
+    // Fallback account check (only allowed if database is empty/unseeded)
+    if (u === 'admin' && p === 'admin123' && currentEmployees.length === 0) {
+      setCurrentUser({ id: 'emp_admin', name: 'System Manager', username: 'admin', role: 'Manager' });
+      addToast('Logged in as Initial Administrator');
       setLoginUser('');
       setLoginPass('');
       return;
@@ -677,6 +677,14 @@ export default function App() {
     // Track deletions for Cloud Sync
     const currentList = await db.employees.getAll();
     const idsToKeep = updatedEmployees.map(e => e.id);
+
+    // Check if the current user was deleted
+    if (currentUser && currentUser.id && !idsToKeep.includes(currentUser.id)) {
+      setCurrentUser(null);
+      setView('dashboard');
+      addToast('Your staff profile was deleted. Session logged out.', 'warning');
+    }
+
     for (const item of currentList) {
       if (!idsToKeep.includes(item.id)) {
         await db.employees.delete(item.id);
@@ -698,6 +706,24 @@ export default function App() {
         synced: item.synced === true
       };
       await db.employees.put(enrichedItem);
+
+      // Update currentUser details if the active logged-in user is updated
+      if (currentUser && currentUser.id === item.id) {
+        if (item.status === 'inactive') {
+          // If disabled, log out immediately
+          setCurrentUser(null);
+          setView('dashboard');
+          addToast('Your staff account was disabled. Session logged out.', 'warning');
+        } else {
+          // Update credentials in session state
+          setCurrentUser({
+            id: item.id,
+            name: item.name,
+            username: item.username,
+            role: item.role
+          });
+        }
+      }
     }
     triggerInstantCloudSync();
   };

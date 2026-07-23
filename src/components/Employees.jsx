@@ -35,8 +35,20 @@ export default function Employees({
       return;
     }
 
+    // Check if editing
     let updatedEmployees;
     if (editingEmployee) {
+      // Demoting guard for last active manager
+      const isOldManager = (editingEmployee.role || '').toLowerCase().trim() === 'manager';
+      const isNewManager = role.toLowerCase().trim() === 'manager';
+      if (isOldManager && !isNewManager) {
+        const managersCount = employees.filter(e => (e.role || '').toLowerCase().trim() === 'manager' && e.status === 'active').length;
+        if (managersCount <= 1) {
+          addToast('Action denied: Cannot demote the last active Manager account.', 'error');
+          return;
+        }
+      }
+
       updatedEmployees = employees.map(emp => 
         emp.id === editingEmployee.id 
           ? { ...emp, name, role, phone, username: username.toLowerCase().trim(), password }
@@ -72,6 +84,15 @@ export default function Employees({
   };
 
   const handleDeleteEmployee = (employeeId) => {
+    const emp = employees.find(e => e.id === employeeId);
+    const isEmpManager = (emp?.role || '').toLowerCase().trim() === 'manager';
+    const managersCount = employees.filter(e => (e.role || '').toLowerCase().trim() === 'manager' && e.status === 'active').length;
+
+    if (isEmpManager && managersCount <= 1) {
+      addToast('Action denied: Cannot delete the last active Manager account.', 'error');
+      return;
+    }
+
     if (confirm('Are you sure you want to permanently delete this employee from the system?')) {
       const updatedEmployees = employees.filter(emp => emp.id !== employeeId);
       onUpdateEmployees(updatedEmployees);
@@ -144,6 +165,15 @@ export default function Employees({
 
   // Toggle employee active status
   const handleToggleStatus = (employeeId) => {
+    const emp = employees.find(e => e.id === employeeId);
+    const isEmpManager = (emp?.role || '').toLowerCase().trim() === 'manager';
+    const managersCount = employees.filter(e => (e.role || '').toLowerCase().trim() === 'manager' && e.status === 'active').length;
+
+    if (isEmpManager && emp.status === 'active' && managersCount <= 1) {
+      addToast('Action denied: Cannot disable the last active Manager account.', 'error');
+      return;
+    }
+
     const updatedEmployees = employees.map(emp => 
       emp.id === employeeId 
         ? { ...emp, status: emp.status === 'active' ? 'inactive' : 'active' }
