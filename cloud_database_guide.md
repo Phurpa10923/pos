@@ -31,7 +31,7 @@ Once your project is ready, you need to create the tables to store your POS data
 CREATE TABLE public.restaurants (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'active',
+    status TEXT NOT NULL DEFAULT 'active' CONSTRAINT chk_rest_status CHECK (status IN ('active', 'inactive')),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
 
@@ -66,11 +66,11 @@ CREATE TABLE public.employees (
     id TEXT PRIMARY KEY,
     restaurant_id TEXT REFERENCES public.restaurants(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
-    role TEXT NOT NULL,
+    role TEXT NOT NULL CONSTRAINT chk_role CHECK (role IN ('Manager', 'Cashier', 'Server', 'Chef')),
     phone TEXT,
     username TEXT NOT NULL,
     password TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'active',
+    status TEXT NOT NULL DEFAULT 'active' CONSTRAINT chk_status CHECK (status IN ('active', 'inactive')),
     synced BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
@@ -106,7 +106,7 @@ CREATE TABLE public.sales (
     tax_amount NUMERIC,
     tax_breakdown JSONB,
     total NUMERIC NOT NULL DEFAULT 0,
-    payment_method TEXT NOT NULL,
+    payment_method TEXT NOT NULL CONSTRAINT chk_payment CHECK (payment_method IN ('Cash', 'UPI', 'Split (Cash + UPI)')),
     cashier TEXT,
     whatsapp_number TEXT,
     synced BOOLEAN DEFAULT TRUE,

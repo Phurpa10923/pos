@@ -228,13 +228,14 @@ export default function App() {
   useEffect(() => {
     if (currentUser) {
       const allowedViews = {
-        Manager: ['dashboard', 'pos', 'menu', 'inventory', 'employees', 'reports', 'settings'],
-        Cashier: ['dashboard', 'pos', 'inventory', 'employees'],
-        Server: ['pos'],
-        Chef: ['inventory', 'employees']
+        manager: ['dashboard', 'pos', 'menu', 'inventory', 'employees', 'reports', 'settings'],
+        cashier: ['dashboard', 'pos', 'inventory', 'employees'],
+        server: ['pos'],
+        chef: ['inventory', 'employees']
       };
       
-      const allowedList = allowedViews[currentUser.role] || ['pos'];
+      const roleKey = (currentUser.role || 'server').toLowerCase().trim();
+      const allowedList = allowedViews[roleKey] || ['pos'];
       if (!allowedList.includes(view)) {
         setView(allowedList[0]);
       }
@@ -456,12 +457,45 @@ export default function App() {
       return false;
     }
 
-    // Update employees array
+    const currentEmployee = employees.find(e => e.id === updatedProfile.id);
+    const mergedProfile = { ...currentEmployee, ...updatedProfile };
+
+    // Update employees array locally
     const updatedEmployees = employees.map(emp => 
       emp.id === updatedProfile.id ? { ...emp, ...updatedProfile } : emp
     );
     setEmployees(updatedEmployees);
-    await db.employees.put({ ...employees.find(e => e.id === updatedProfile.id), ...updatedProfile });
+
+    // If cloud sync is enabled and this is a cloud employee, push to Supabase immediately
+    let synced = true;
+    if (syncConfig.enabled && syncConfig.url && updatedProfile.id !== 'emp_admin') {
+      try {
+        const payloadItem = {
+          ...mergedProfile,
+          restaurant_id: syncConfig.restaurantId,
+          synced: true
+        };
+        const response = await fetch(`${syncConfig.url}/rest/v1/employees?on_conflict=id`, {
+          method: 'POST',
+          headers: {
+            'apikey': syncConfig.password,
+            'Authorization': `Bearer ${syncConfig.password}`,
+            'Content-Type': 'application/json',
+            'Prefer': 'resolution=merge-duplicates'
+          },
+          body: JSON.stringify([payloadItem])
+        });
+        if (!response.ok) {
+          throw new Error(`Sync failed: ${response.statusText}`);
+        }
+      } catch (err) {
+        console.warn('Failed to sync profile update to cloud:', err);
+        addToast('Profile saved locally; cloud database will retry in background', 'warning');
+        synced = false;
+      }
+    }
+
+    await db.employees.put({ ...mergedProfile, synced });
 
     // Update currentUser state
     setCurrentUser({
@@ -725,12 +759,12 @@ export default function App() {
         <nav className="sidebar-menu">
           {navItems.filter(item => {
             const allowedViews = {
-              Manager: ['dashboard', 'pos', 'menu', 'inventory', 'employees', 'reports', 'settings'],
-              Cashier: ['dashboard', 'pos', 'inventory', 'employees'],
-              Server: ['pos'],
-              Chef: ['inventory', 'employees']
+              manager: ['dashboard', 'pos', 'menu', 'inventory', 'employees', 'reports', 'settings'],
+              cashier: ['dashboard', 'pos', 'inventory', 'employees'],
+              server: ['pos'],
+              chef: ['inventory', 'employees']
             };
-            const role = currentUser?.role || 'Server';
+            const role = (currentUser?.role || 'server').toLowerCase().trim();
             return (allowedViews[role] || ['pos']).includes(item.id);
           }).map(item => {
             const Icon = item.icon;
