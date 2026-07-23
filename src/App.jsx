@@ -33,9 +33,25 @@ export default function App() {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   
   // User Session State
-  const [currentUser, setCurrentUser] = useState(null);
+  const [currentUser, setCurrentUser] = useState(() => {
+    const saved = localStorage.getItem('currentUser');
+    try {
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
   const [loginUser, setLoginUser] = useState('');
   const [loginPass, setLoginPass] = useState('');
+
+  // Persist session state changes
+  useEffect(() => {
+    if (currentUser) {
+      localStorage.setItem('currentUser', JSON.stringify(currentUser));
+    } else {
+      localStorage.removeItem('currentUser');
+    }
+  }, [currentUser]);
 
   // Cloud Linkage setup state
   const [showCloudSetup, setShowCloudSetup] = useState(false);
@@ -241,6 +257,29 @@ export default function App() {
       }
     }
   }, [currentUser]);
+
+  // Validate persistent session against roster on mount
+  useEffect(() => {
+    const validateSessionOnMount = async () => {
+      const savedSession = localStorage.getItem('currentUser');
+      if (savedSession) {
+        try {
+          const user = JSON.parse(savedSession);
+          if (user && user.id && user.id !== 'emp_admin') {
+            const loadedEmployees = await db.employees.getAll();
+            const found = loadedEmployees.find(emp => emp.id === user.id);
+            if (!found || found.status !== 'active') {
+              setCurrentUser(null);
+              addToast('Session expired or account disabled.', 'warning');
+            }
+          }
+        } catch (err) {
+          console.warn('Failed to validate mount session:', err);
+        }
+      }
+    };
+    validateSessionOnMount();
+  }, []);
 
   // Background Cloud Sync & Realtime WebSockets Loop
   useEffect(() => {
