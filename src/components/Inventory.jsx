@@ -7,8 +7,9 @@ export default function Inventory({
   addToast,
   currentUser
 }) {
-  const canModify = currentUser?.role === 'Manager' || currentUser?.role === 'Chef';
-  const canRestock = currentUser?.role === 'Manager' || currentUser?.role === 'Chef' || currentUser?.role === 'Cashier';
+  const userRole = (currentUser?.role || '').toLowerCase().trim();
+  const canModify = userRole === 'manager' || userRole === 'chef';
+  const canRestock = userRole === 'manager' || userRole === 'chef' || userRole === 'cashier';
   const [searchQuery, setSearchQuery] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingItem, setEditingItem] = useState(null);

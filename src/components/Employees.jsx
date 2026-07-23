@@ -165,7 +165,7 @@ export default function Employees({
     addToast('Roster seeded with sample staff details');
   };
 
-  const isManager = currentUser?.role === 'Manager';
+  const isManager = (currentUser?.role || '').toLowerCase().trim() === 'manager';
 
   if (!isManager) {
     const myEmp = employees.find(e => e.username === currentUser?.username);

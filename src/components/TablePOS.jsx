@@ -253,8 +253,8 @@ export default function TablePOS({
   const handleCheckoutClick = () => {
     if (!activeTable || activeTable.currentOrder.length === 0) return;
 
-    // Verify cashier checkout privileges
-    const hasPrivilege = currentUser?.role === 'Manager' || currentUser?.role === 'Cashier';
+    const userRole = (currentUser?.role || '').toLowerCase().trim();
+    const hasPrivilege = userRole === 'manager' || userRole === 'cashier';
     if (!hasPrivilege) {
       addToast('Permission Denied: Only Cashiers and Managers can checkout bills.', 'error');
       return;
