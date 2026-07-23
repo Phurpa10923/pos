@@ -119,7 +119,7 @@ export default function App() {
     try {
       const loadedMenu = await db.menu.getAll();
       let finalMenu = loadedMenu;
-      if (loadedMenu.length === 0 && !isSeeded) {
+      if (loadedMenu.length === 0 && !isSeeded && !settings.enabled) {
         const defaultMenu = [
           { id: 'menu_espresso', name: 'Espresso Coffee', category: 'Beverages', price: 80, inventoryId: 'inv_coffee_beans', inventoryQty: 0.02 },
           { id: 'menu_cappuccino', name: 'Cappuccino Coffee', category: 'Beverages', price: 120, inventoryId: 'inv_milk', inventoryQty: 0.25 },
@@ -146,7 +146,7 @@ export default function App() {
 
       const loadedInventory = await db.inventory.getAll();
       let finalInventory = loadedInventory;
-      if (loadedInventory.length === 0 && !isSeeded) {
+      if (loadedInventory.length === 0 && !isSeeded && !settings.enabled) {
         const defaultInventory = [
           { id: 'inv_coffee_beans', name: 'Coffee Beans', costPrice: 450, stock: 15.0, unit: 'kg', minStock: 2.0 },
           { id: 'inv_milk', name: 'Whole Milk', costPrice: 60, stock: 45.0, unit: 'L', minStock: 5.0 },
@@ -172,7 +172,7 @@ export default function App() {
 
       const loadedEmployees = await db.employees.getAll();
       let finalEmployees = loadedEmployees;
-      if (loadedEmployees.length === 0) {
+      if (loadedEmployees.length === 0 && !settings.enabled) {
         // If first run, seed full roster. If wiped, always guarantee at least one admin account exists.
         const defaultEmployees = !isSeeded ? [
           { id: 'emp_admin', name: 'Admin Manager', role: 'Manager', phone: '9876543210', username: 'admin', password: 'admin123', status: 'active' },
@@ -290,9 +290,7 @@ export default function App() {
     const triggerSync = async () => {
       try {
         const result = await performCloudSync();
-        if (result.success && result.count > 0) {
-          console.log(`[PortablePOS Sync] Auto-synced ${result.count} records silently.`);
-          
+        if (result.success) {
           const loadedMenu = await db.menu.getAll();
           setMenu(loadedMenu);
           const loadedInventory = await db.inventory.getAll();
@@ -312,13 +310,16 @@ export default function App() {
       }
     };
 
-    // 1. Establish Real-time WebSocket connection to Supabase Postgres Changes
+    // 1. Trigger sync immediately on mount to download updates instantly
+    triggerSync();
+
+    // 2. Establish Real-time WebSocket connection to Supabase Postgres Changes
     const stopRealtime = startRealtimeSync((tableName) => {
       console.log(`[PortablePOS Realtime] Triggering cloud sync for table: ${tableName}`);
       triggerSync();
     });
 
-    // 2. Periodical fallback loop (60s check for database state integrity)
+    // 3. Periodical fallback loop (60s check for database state integrity)
     const interval = setInterval(triggerSync, 60000);
 
     return () => {
