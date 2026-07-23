@@ -6,5 +6,5 @@
 //
 // Leave these blank if you want each user to set up their own custom database.
 
-export const SUPABASE_URL = ""; // e.g., "https://xxxx.supabase.co"
-export const SUPABASE_ANON_KEY = ""; // e.g., "eyJhbGciOi..."
+export const SUPABASE_URL = "https://wphxezdxhbrccpyqidqw.supabase.co"; // e.g., "https://xxxx.supabase.co"
+export const SUPABASE_ANON_KEY = "sb_publishable_mjfp50U-JnkP1uyt9XE4GA_s05AkUTd"; // e.g., "eyJhbGciOi..."

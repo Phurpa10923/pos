@@ -299,6 +299,26 @@ export default function App() {
 
       setIsVerifying(true);
       try {
+        // 1. Verify that the Restaurant ID exists and is active
+        const resResponse = await fetch(`${activeUrl}/rest/v1/restaurants?id=eq.${encodeURIComponent(activeRestId)}&status=eq.active`, {
+          method: 'GET',
+          headers: {
+            'apikey': activeKey,
+            'Authorization': `Bearer ${activeKey}`
+          }
+        });
+
+        if (!resResponse.ok) throw new Error('Failed to verify Restaurant ID status');
+        const matchedRestaurants = await resResponse.json();
+        if (matchedRestaurants.length === 0) {
+          addToast('Invalid or suspended Restaurant ID. Contact support.', 'error');
+          setIsVerifying(false);
+          return;
+        }
+
+        const officialStoreName = matchedRestaurants[0].name;
+
+        // 2. Fetch the employees roster
         const response = await fetch(`${activeUrl}/rest/v1/employees?restaurant_id=eq.${encodeURIComponent(activeRestId)}`, {
           method: 'GET',
           headers: {
@@ -322,6 +342,7 @@ export default function App() {
         saveSyncSettings(true, activeUrl, activeKey, activeRestId);
         setSyncConfig({ enabled: true, url: activeUrl, password: activeKey, restaurantId: activeRestId });
         localStorage.setItem('db_seeded', 'true');
+        localStorage.setItem('restaurantName', officialStoreName);
 
         // Save employees list locally
         await db.employees.clear();
@@ -329,10 +350,10 @@ export default function App() {
 
         if (matched) {
           setCurrentUser({ name: matched.name, username: matched.username, role: matched.role, id: matched.id });
-          addToast(`Logged in successfully! Linked to: ${cloudRestId}`);
+          addToast(`Logged in successfully! Linked to: ${officialStoreName}`);
         } else {
           setCurrentUser({ name: 'System Manager', username: 'admin', role: 'Manager' });
-          addToast(`Logged in as Administrator! Linked to: ${cloudRestId}`);
+          addToast(`Logged in as Administrator! Linked to: ${officialStoreName}`);
         }
 
         // Pull other tables in the background

@@ -27,10 +27,18 @@ Once your project is ready, you need to create the tables to store your POS data
 3. Copy and paste the following SQL script into the editor:
 
 ```sql
--- 1. Create INVENTORY table
+-- 1. Create RESTAURANTS registry table
+CREATE TABLE public.restaurants (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+-- 2. Create INVENTORY table
 CREATE TABLE public.inventory (
     id TEXT PRIMARY KEY,
-    restaurant_id TEXT NOT NULL,
+    restaurant_id TEXT REFERENCES public.restaurants(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
     cost_price NUMERIC NOT NULL DEFAULT 0,
     stock NUMERIC NOT NULL DEFAULT 0,
@@ -40,10 +48,10 @@ CREATE TABLE public.inventory (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
 
--- 2. Create MENU table
+-- 3. Create MENU table
 CREATE TABLE public.menu (
     id TEXT PRIMARY KEY,
-    restaurant_id TEXT NOT NULL,
+    restaurant_id TEXT REFERENCES public.restaurants(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
     category TEXT NOT NULL,
     price NUMERIC NOT NULL DEFAULT 0,
@@ -53,10 +61,10 @@ CREATE TABLE public.menu (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
 
--- 3. Create EMPLOYEES table
+-- 4. Create EMPLOYEES table
 CREATE TABLE public.employees (
     id TEXT PRIMARY KEY,
-    restaurant_id TEXT NOT NULL,
+    restaurant_id TEXT REFERENCES public.restaurants(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
     role TEXT NOT NULL,
     phone TEXT,
@@ -67,10 +75,10 @@ CREATE TABLE public.employees (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
 
--- 4. Create ATTENDANCE table
+-- 5. Create ATTENDANCE table
 CREATE TABLE public.attendance (
     id TEXT PRIMARY KEY,
-    restaurant_id TEXT NOT NULL,
+    restaurant_id TEXT REFERENCES public.restaurants(id) ON DELETE CASCADE,
     date TEXT NOT NULL,
     employee_id TEXT REFERENCES public.employees(id) ON DELETE CASCADE,
     employee_name TEXT,
@@ -84,10 +92,10 @@ CREATE TABLE public.attendance (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
 
--- 5. Create SALES table
+-- 6. Create SALES table
 CREATE TABLE public.sales (
     id TEXT PRIMARY KEY,
-    restaurant_id TEXT NOT NULL,
+    restaurant_id TEXT REFERENCES public.restaurants(id) ON DELETE CASCADE,
     timestamp TEXT NOT NULL,
     table_name TEXT,
     items JSONB NOT NULL,
@@ -105,14 +113,16 @@ CREATE TABLE public.sales (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
 
--- 6. Enable Row Level Security (RLS) or grant API permissions
+-- 7. Enable Row Level Security (RLS) or grant API permissions
 -- (On Free tier projects, PostgREST requires permissions to perform upserts from client)
+ALTER TABLE public.restaurants ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.inventory ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.menu ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.employees ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.attendance ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sales ENABLE ROW LEVEL SECURITY;
 
+CREATE POLICY "Allow public read/write access" ON public.restaurants FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow public read/write access" ON public.inventory FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow public read/write access" ON public.menu FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow public read/write access" ON public.employees FOR ALL USING (true) WITH CHECK (true);
@@ -124,42 +134,40 @@ CREATE POLICY "Allow public read/write access" ON public.sales FOR ALL USING (tr
 
 ---
 
-## Step 3: Copy Your API Connection Credentials
-To hook your PortablePOS app to your Supabase project, you need the connection URL and the API access key:
+## Step 3: Onboarding a New Restaurant / Tenant
 
-1. Inside Supabase, click on the **Project Settings** (represented by a gear icon ⚙️ in the bottom left).
-2. Go to the **API** section in the settings sidebar.
-3. Locate the **Project API keys** and **Connection Info**:
-   - **Project URL**: Copy the URL value under **`Project URL`** (e.g. `https://xxxx.supabase.co`). This goes into **Supabase Project URL** in the settings.
-   - **Anon Key**: Copy the long JWT token value under **`anon public`** key. This goes into **Supabase Anon Key** in the settings.
+To get a new restaurant branch or client ready to use your POS system, you need to add a record for them in the database:
 
----
+### Part A: Register the Restaurant ID
+1. In your Supabase dashboard, go to the **Table Editor** (spreadsheet icon).
+2. Select the **`restaurants`** table.
+3. Click **Insert row** and fill in:
+   - **`id`**: Choose a unique lowercase text code for the branch (e.g. `royal_deli`, `pizza_palace_ny`).
+   - **`name`**: The display name of the restaurant (e.g. `Royal Deli Manhattan`).
+   - **`status`**: Must be **`active`**. (Set to `inactive` to suspend client POS access).
+4. Click **Save**.
 
-## Step 4: Configure the Connection in PortablePOS
-Now that you have your credentials:
-
-1. Log in to PortablePOS as **Manager / Admin** (e.g. using `admin` / `admin123`).
-2. Go to the **Settings** tab.
-3. Enable **Cloud Sync** by checking the toggle button.
-4. Input your credentials:
-   - **Supabase Project URL**: Paste your Project URL.
-   - **Supabase Anon Key**: Paste your Anon Key.
-   - **Restaurant / Store ID (Tenant ID)**: Assign a unique lowercase text identifier for this branch (e.g., `deli_manhattan_5`, `rest_spicy_bites`).
-5. Click **Save Connection**.
-6. Click **Sync Now** to start the sync.
-   - The app will automatically upload all existing local database items and import any data already present on Supabase matching your Restaurant ID.
-
----
-
-## Multi-Device Terminal Synchronization
-* **Shared Branching**: To connect multiple phones or tablets to the same restaurant database, configure them with the **exact same Supabase credentials** and the **exact same Restaurant ID**. They will immediately share transactions, menus, and employee credentials.
-* **Separate Branches**: If you own multiple restaurants, you can use the same Supabase project but configure them with **different Restaurant IDs** (e.g., `rest_branch_1` and `rest_branch_2`). The databases will partition the data automatically so that terminal layouts do not conflict.
+### Part B: Create their Admin staff account
+1. Select the **`employees`** table.
+2. Click **Insert row** and fill in:
+   - **`id`**: e.g., `emp_admin_royal_deli` (or any unique ID).
+   - **`restaurant_id`**: Enter the exact Restaurant ID you registered in Part A (e.g. `royal_deli`).
+   - **`name`**: e.g. `Store Manager`.
+   - **`role`**: Must be **`Manager`** (to allow them full access).
+   - **`username`**: e.g. `admin`.
+   - **`password`**: e.g. `admin123`.
+   - **`status`**: Must be **`active`**.
+   - **`synced`**: Must be **`true`**.
+3. Click **Save**.
 
 ---
 
-## Role-Based Access Control
-PortablePOS restricts access to screens depending on the logged-in staff member's role:
-* **Admin / Manager**: Full system access. Can edit/delete the menu, modify wholesale inventory stocks, add/remove/edit employees, inspect EOD/monthly sales reports, download backups, and configure database connections.
-* **Server**: Exclusively restricted to the **POS (Tables map & checkout)** screen. Servers can select tables, place orders, modify active carts, and process e-bills. All other navigation paths, dashboards, stats, and settings are hidden from their viewport to maintain operational security.
-* **Cashier**: Access to billing POS, wholesale stock checks, and attendance registers.
-* **Chef**: Access to wholesale inventory stocks and attendance registers.
+## Step 4: Connecting the Terminal (Client Setup)
+
+Give the restaurant owner their unique **Restaurant ID**, along with their starting **Username** and **Password** (from Step 3).
+
+1. In PortablePOS, click **"Connect Restaurant (Cloud)"** (or use the Cloud settings tab under Settings).
+2. Input their **Restaurant ID**. (The Supabase Project URL and Anon Key are pre-configured centrally in the codebase!).
+3. Input their **Username** and **Password**.
+4. Click **Link & Login**.
+5. The terminal instantly connects to their tenant, pulls their custom restaurant name, and establishes a secure sync session!
