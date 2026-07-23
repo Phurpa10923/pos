@@ -299,6 +299,8 @@ export default function App() {
           setEmployees(loadedEmployees);
           const loadedAttendance = await db.attendance.getAll();
           setAttendance(loadedAttendance);
+          const loadedTables = await db.tables.getAll();
+          setTables(loadedTables);
           
           const thirtyDaysAgo = new Date();
           thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
@@ -592,7 +594,27 @@ export default function App() {
 
   const handleUpdateTables = async (updatedTables) => {
     setTables(updatedTables);
-    await db.tables.putAll(updatedTables);
+
+    // Save to IndexedDB and mark as unsynced
+    for (const table of updatedTables) {
+      const oldTable = tables.find(t => t.id === table.id);
+      
+      // Check if table state has changed
+      const hasChanged = !oldTable ||
+        oldTable.status !== table.status ||
+        oldTable.discount !== table.discount ||
+        oldTable.tax !== table.tax ||
+        oldTable.orderedBy !== table.orderedBy ||
+        JSON.stringify(oldTable.currentOrder) !== JSON.stringify(table.currentOrder);
+
+      const enriched = {
+        ...table,
+        synced: hasChanged ? false : (table.synced === true)
+      };
+      await db.tables.put(enriched);
+    }
+    
+    triggerInstantCloudSync();
   };
 
   const triggerInstantCloudSync = () => {

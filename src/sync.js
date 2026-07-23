@@ -58,6 +58,12 @@ function toSnakeCase(item, tableName) {
     if ('clockOut' in converted) { converted.clock_out = converted.clockOut; delete converted.clockOut; }
     if ('clockOutRaw' in converted) { converted.clock_out_raw = converted.clockOutRaw; delete converted.clockOutRaw; }
   }
+
+  if (tableName === 'tables') {
+    if ('currentOrder' in converted) { converted.current_order = converted.currentOrder; delete converted.currentOrder; }
+    if ('billTotal' in converted) { converted.bill_total = converted.billTotal; delete converted.billTotal; }
+    if ('orderedBy' in converted) { converted.ordered_by = converted.orderedBy; delete converted.orderedBy; }
+  }
   
   return converted;
 }
@@ -96,6 +102,12 @@ function toCamelCase(item, tableName) {
     if ('clock_out_raw' in converted) { converted.clockOutRaw = converted.clock_out_raw; delete converted.clock_out_raw; }
   }
   
+  if (tableName === 'tables') {
+    if ('current_order' in converted) { converted.currentOrder = converted.current_order; delete converted.current_order; }
+    if ('bill_total' in converted) { converted.billTotal = converted.bill_total; delete converted.bill_total; }
+    if ('ordered_by' in converted) { converted.orderedBy = converted.ordered_by; delete converted.ordered_by; }
+  }
+  
   return converted;
 }
 
@@ -126,6 +138,10 @@ async function uploadTable(tableName, items, settings) {
   });
 
   if (!response.ok) {
+    if (response.status === 404 && tableName === 'tables') {
+      console.warn('[PortablePOS Sync] Remote tables endpoint returned 404. Skipping tables upload.');
+      return false;
+    }
     const errorText = await response.text();
     throw new Error(`Upload to ${tableName} failed: ${response.statusText} (${errorText})`);
   }
@@ -145,6 +161,10 @@ async function downloadTable(tableName, settings) {
   });
 
   if (!response.ok) {
+    if (response.status === 404 && tableName === 'tables') {
+      console.warn('[PortablePOS Sync] Remote tables endpoint returned 404. Skipping tables download.');
+      return [];
+    }
     const errorText = await response.text();
     throw new Error(`Download from ${tableName} failed: ${response.statusText} (${errorText})`);
   }
@@ -175,6 +195,7 @@ export async function performCloudSync(addToast) {
     const localSales = await db.sales.getAll();
     const localEmployees = await db.employees.getAll();
     const localAttendance = await db.attendance.getAll();
+    const localTables = await db.tables.getAll();
 
     // 0. Sync deletions first to clear them from remote database
     const deletedRecords = await db.deleted_records.getAll();
@@ -200,6 +221,7 @@ export async function performCloudSync(addToast) {
     const unsyncedSales = localSales.filter(item => !item.synced);
     const unsyncedEmployees = localEmployees.filter(item => !item.synced);
     const unsyncedAttendance = localAttendance.filter(item => !item.synced);
+    const unsyncedTables = localTables.filter(item => item.synced === false);
 
     // 2. Upload local offline actions to Supabase (Upload dependencies first)
     if (unsyncedInventory.length > 0) await uploadTable('inventory', unsyncedInventory, settings);
@@ -207,6 +229,14 @@ export async function performCloudSync(addToast) {
     if (unsyncedSales.length > 0) await uploadTable('sales', unsyncedSales, settings);
     if (unsyncedEmployees.length > 0) await uploadTable('employees', unsyncedEmployees, settings);
     if (unsyncedAttendance.length > 0) await uploadTable('attendance', unsyncedAttendance, settings);
+    
+    let uploadedTablesOk = false;
+    if (unsyncedTables.length > 0) {
+      const uploadSuccess = await uploadTable('tables', unsyncedTables, settings);
+      if (uploadSuccess !== false) {
+        uploadedTablesOk = true;
+      }
+    }
 
     // 3. Mark successfully uploaded items as synced locally in IndexedDB
     const markSynced = (list) => list.map(item => ({ ...item, synced: true }));
@@ -215,6 +245,7 @@ export async function performCloudSync(addToast) {
     if (unsyncedSales.length > 0) await db.sales.putAll(markSynced(unsyncedSales));
     if (unsyncedEmployees.length > 0) await db.employees.putAll(markSynced(unsyncedEmployees));
     if (unsyncedAttendance.length > 0) await db.attendance.putAll(markSynced(unsyncedAttendance));
+    if (uploadedTablesOk) await db.tables.putAll(markSynced(unsyncedTables));
 
     // 4. Download updates from Supabase to sync other devices' modifications
     const remoteInventory = await downloadTable('inventory', settings);
@@ -222,6 +253,7 @@ export async function performCloudSync(addToast) {
     const remoteSales = await downloadTable('sales', settings);
     const remoteEmployees = await downloadTable('employees', settings);
     const remoteAttendance = await downloadTable('attendance', settings);
+    const remoteTables = await downloadTable('tables', settings);
 
     // 5. Upsert downloaded items into local IndexedDB
     if (remoteInventory.length > 0) await db.inventory.putAll(remoteInventory);
@@ -229,13 +261,15 @@ export async function performCloudSync(addToast) {
     if (remoteSales.length > 0) await db.sales.putAll(remoteSales);
     if (remoteEmployees.length > 0) await db.employees.putAll(remoteEmployees);
     if (remoteAttendance.length > 0) await db.attendance.putAll(remoteAttendance);
+    if (remoteTables.length > 0) await db.tables.putAll(remoteTables);
 
     const totalCount = 
       unsyncedMenu.length + 
       unsyncedInventory.length + 
       unsyncedSales.length + 
       unsyncedEmployees.length + 
-      unsyncedAttendance.length;
+      unsyncedAttendance.length +
+      unsyncedTables.length;
 
     return { success: true, count: totalCount };
 
