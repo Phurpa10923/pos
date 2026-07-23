@@ -7,6 +7,7 @@ export default function Settings({ addToast, onReloadDatabase }) {
   const [syncEnabled, setSyncEnabled] = useState(false);
   const [syncUrl, setSyncUrl] = useState('');
   const [syncPassword, setSyncPassword] = useState('');
+  const [restaurantId, setRestaurantId] = useState('my_restaurant');
   const [syncStatus, setSyncStatus] = useState('Idle');
   const [unsyncedCount, setUnsyncedCount] = useState(0);
   const [dbStats, setDbStats] = useState({ sales: 0, menu: 0, inventory: 0, employees: 0 });
@@ -49,6 +50,7 @@ export default function Settings({ addToast, onReloadDatabase }) {
     setSyncEnabled(settings.enabled);
     setSyncUrl(settings.url);
     setSyncPassword(settings.password);
+    setRestaurantId(settings.restaurantId || 'my_restaurant');
     setHasExistingConfig(settings.enabled && !!settings.url);
   };
 
@@ -57,25 +59,36 @@ export default function Settings({ addToast, onReloadDatabase }) {
   }, []);
 
   const handleSaveSettings = (e) => {
-    e.preventDefault();
-    if (!syncUrl.trim()) {
-      addToast('Sync URL is required to save', 'warning');
-      return;
+    if (e && e.preventDefault) e.preventDefault();
+    if (syncEnabled) {
+      if (!syncUrl.trim()) {
+        addToast('Supabase URL is required', 'warning');
+        return;
+      }
+      if (!syncPassword.trim()) {
+        addToast('Supabase Anon Key is required', 'warning');
+        return;
+      }
+      if (!restaurantId.trim()) {
+        addToast('Restaurant ID is required', 'warning');
+        return;
+      }
     }
-    saveSyncSettings(syncEnabled, syncUrl, syncPassword);
-    addToast('Cloud synchronization settings updated');
+    saveSyncSettings(syncEnabled, syncUrl, syncPassword, restaurantId);
+    addToast('Cloud connection settings updated successfully');
     loadStatsAndSettings();
     if (onReloadDatabase) onReloadDatabase(); // Notify App to refresh badge
   };
 
   const handleDeleteConnection = () => {
-    if (confirm('Are you sure you want to delete this cloud database connection? The app will return to offline-only storage. Local data will remain intact.')) {
-      saveSyncSettings(false, '', '');
+    if (confirm('Are you sure you want to disconnect cloud sync? The app will return to offline-only storage. Local data will remain intact.')) {
+      saveSyncSettings(false, '', '', 'my_restaurant');
       setSyncEnabled(false);
       setSyncUrl('');
       setSyncPassword('');
+      setRestaurantId('my_restaurant');
       setHasExistingConfig(false);
-      addToast('Cloud database disconnected and deleted');
+      addToast('Cloud database disconnected');
       if (onReloadDatabase) onReloadDatabase(); // Notify App to refresh badge
     }
   };
@@ -165,6 +178,7 @@ export default function Settings({ addToast, onReloadDatabase }) {
         if (d.tables) await db.tables.putAll(d.tables);
 
         addToast('Database restored successfully!');
+        localStorage.setItem('db_seeded', 'true');
         loadStatsAndSettings();
         if (onReloadDatabase) onReloadDatabase();
       } catch (err) {
@@ -196,6 +210,7 @@ export default function Settings({ addToast, onReloadDatabase }) {
         }));
         await db.tables.putAll(defaultTables);
 
+        localStorage.setItem('db_seeded', 'true');
         addToast('Local database wiped successfully', 'info');
         loadStatsAndSettings();
         if (onReloadDatabase) onReloadDatabase();
@@ -231,6 +246,102 @@ export default function Settings({ addToast, onReloadDatabase }) {
             <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px', display: 'block' }}>
               Customize your storefront name. This will be printed at the top of all physical receipts, WhatsApp text shares, and image shares.
             </span>
+          </div>
+        </div>
+
+        {/* Cloud Synchronization Settings */}
+        <div className="glass-panel" style={{ padding: '24px' }}>
+          <h2 className="section-title" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+            <Cloud size={22} className="text-teal" /> Cloud Database Connection
+          </h2>
+          
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: 'rgba(255,255,255,0.02)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}>
+              <div>
+                <div style={{ fontWeight: '600', fontSize: '14px' }}>Enable Cloud Sync</div>
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Sync data bi-directionally across multiple devices</div>
+              </div>
+              <label className="switch">
+                <input 
+                  type="checkbox" 
+                  checked={syncEnabled} 
+                  onChange={(e) => {
+                    setSyncEnabled(e.target.checked);
+                    if (!e.target.checked) {
+                      handleDeleteConnection();
+                    }
+                  }} 
+                />
+                <span className="slider round"></span>
+              </label>
+            </div>
+
+            {syncEnabled && (
+              <>
+                <div className="form-group">
+                  <label>Supabase Project URL *</label>
+                  <input 
+                    type="url" 
+                    className="input-field" 
+                    placeholder="https://your-project.supabase.co" 
+                    value={syncUrl}
+                    onChange={(e) => setSyncUrl(e.target.value)}
+                  />
+                  <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Found under Settings &gt; API in your Supabase Dashboard</span>
+                </div>
+
+                <div className="form-group">
+                  <label>Supabase Anon Key *</label>
+                  <input 
+                    type="password" 
+                    className="input-field" 
+                    placeholder="your-anon-key-jwt" 
+                    value={syncPassword}
+                    onChange={(e) => setSyncPassword(e.target.value)}
+                  />
+                  <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Found under Settings &gt; API &gt; Project API keys in Supabase</span>
+                </div>
+
+                <div className="form-group">
+                  <label>Restaurant / Store ID (Tenant ID) *</label>
+                  <input 
+                    type="text" 
+                    className="input-field" 
+                    placeholder="e.g. delicious_pizza_1" 
+                    value={restaurantId}
+                    onChange={(e) => setRestaurantId(e.target.value)}
+                  />
+                  <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Ensure all terminals in your restaurant share the exact same ID.</span>
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: 'var(--text-secondary)', padding: '8px 0' }}>
+                  <span>Unsynced Local Changes:</span>
+                  <span style={{ fontWeight: 'bold', color: unsyncedCount > 0 ? 'var(--accent-amber)' : 'var(--accent-emerald)' }}>
+                    {unsyncedCount} records
+                  </span>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                  <button className="btn btn-primary" onClick={handleSaveSettings} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                    Save Connection
+                  </button>
+                  <button 
+                    className="btn btn-secondary" 
+                    onClick={handleSyncNow} 
+                    disabled={isSyncing}
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                  >
+                    {isSyncing ? 'Syncing...' : 'Sync Now'}
+                  </button>
+                </div>
+                
+                {syncStatus && (
+                  <div style={{ fontSize: '12px', textAlign: 'center', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                    Status: <strong>{syncStatus}</strong>
+                  </div>
+                )}
+              </>
+            )}
           </div>
         </div>
 

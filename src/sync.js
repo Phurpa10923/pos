@@ -5,20 +5,79 @@ export function getSyncSettings() {
   return {
     enabled: localStorage.getItem('cloud_sync_enabled') === 'true',
     url: localStorage.getItem('cloud_sync_url') || '',
-    password: localStorage.getItem('cloud_sync_password') || ''
+    password: localStorage.getItem('cloud_sync_password') || '',
+    restaurantId: localStorage.getItem('restaurant_id') || 'my_restaurant'
   };
 }
 
-export function saveSyncSettings(enabled, url, password) {
+export function saveSyncSettings(enabled, url, password, restaurantId) {
   localStorage.setItem('cloud_sync_enabled', enabled ? 'true' : 'false');
   localStorage.setItem('cloud_sync_url', url);
   localStorage.setItem('cloud_sync_password', password);
+  localStorage.setItem('restaurant_id', restaurantId);
+}
+
+// REST helper to upload items to Supabase using standard PostgREST bulk upsert
+async function uploadTable(tableName, items, settings) {
+  if (items.length === 0) return true;
+
+  // Map items to inject restaurant_id for multi-tenant separation
+  const payload = items.map(item => ({
+    ...item,
+    restaurant_id: settings.restaurantId,
+    synced: true
+  }));
+
+  const url = `${settings.url}/rest/v1/${tableName}?on_conflict=id`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'apikey': settings.password,
+      'Authorization': `Bearer ${settings.password}`,
+      'Content-Type': 'application/json',
+      'Prefer': 'resolution=merge-duplicates'
+    },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Upload to ${tableName} failed: ${response.statusText} (${errorText})`);
+  }
+  return true;
+}
+
+// REST helper to download items from Supabase matching the current Restaurant ID
+async function downloadTable(tableName, settings) {
+  const url = `${settings.url}/rest/v1/${tableName}?restaurant_id=eq.${encodeURIComponent(settings.restaurantId)}`;
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: {
+      'apikey': settings.password,
+      'Authorization': `Bearer ${settings.password}`,
+      'Content-Type': 'application/json'
+    }
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Download from ${tableName} failed: ${response.statusText} (${errorText})`);
+  }
+
+  const remoteData = await response.json();
+  // Mark remote items as synced locally
+  return remoteData.map(item => ({
+    ...item,
+    synced: true
+  }));
 }
 
 // Universal Sync Engine
 export async function performCloudSync(addToast) {
   const settings = getSyncSettings();
-  if (!settings.enabled || !settings.url) return { success: false, reason: 'Sync disabled' };
+  if (!settings.enabled || !settings.url || !settings.password) {
+    return { success: false, reason: 'Sync disabled or unconfigured' };
+  }
   if (!navigator.onLine) return { success: false, reason: 'No internet connection' };
 
   try {
@@ -35,65 +94,34 @@ export async function performCloudSync(addToast) {
     const unsyncedEmployees = localEmployees.filter(item => !item.synced);
     const unsyncedAttendance = localAttendance.filter(item => !item.synced);
 
-    // If nothing to sync, report success
-    if (
-      unsyncedMenu.length === 0 &&
-      unsyncedInventory.length === 0 &&
-      unsyncedSales.length === 0 &&
-      unsyncedEmployees.length === 0 &&
-      unsyncedAttendance.length === 0
-    ) {
-      return { success: true, count: 0 };
-    }
+    // 2. Upload local offline actions to Supabase
+    if (unsyncedMenu.length > 0) await uploadTable('menu', unsyncedMenu, settings);
+    if (unsyncedInventory.length > 0) await uploadTable('inventory', unsyncedInventory, settings);
+    if (unsyncedSales.length > 0) await uploadTable('sales', unsyncedSales, settings);
+    if (unsyncedEmployees.length > 0) await uploadTable('employees', unsyncedEmployees, settings);
+    if (unsyncedAttendance.length > 0) await uploadTable('attendance', unsyncedAttendance, settings);
 
-    // 2. Prepare payload
-    const payload = {
-      timestamp: new Date().toISOString(),
-      changes: {
-        menu: unsyncedMenu,
-        inventory: unsyncedInventory,
-        sales: unsyncedSales,
-        employees: unsyncedEmployees,
-        attendance: unsyncedAttendance
-      }
-    };
-
-    // 3. POST request to user cloud database url
-    const response = await fetch(settings.url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${settings.password}`,
-        'X-AuraPOS-Sync': 'true'
-      },
-      body: JSON.stringify(payload)
-    });
-
-    if (!response.ok) {
-      if (response.status === 401 || response.status === 403) {
-        throw new Error('Authentication failed: Invalid sync password/token.');
-      }
-      throw new Error(`Sync server responded with status: ${response.status}`);
-    }
-
-    // 4. Mark successfully synced items in IndexedDB
+    // 3. Mark successfully uploaded items as synced locally in IndexedDB
     const markSynced = (list) => list.map(item => ({ ...item, synced: true }));
+    if (unsyncedMenu.length > 0) await db.menu.putAll(markSynced(unsyncedMenu));
+    if (unsyncedInventory.length > 0) await db.inventory.putAll(markSynced(unsyncedInventory));
+    if (unsyncedSales.length > 0) await db.sales.putAll(markSynced(unsyncedSales));
+    if (unsyncedEmployees.length > 0) await db.employees.putAll(markSynced(unsyncedEmployees));
+    if (unsyncedAttendance.length > 0) await db.attendance.putAll(markSynced(unsyncedAttendance));
 
-    if (unsyncedMenu.length > 0) {
-      await db.menu.putAll(markSynced(unsyncedMenu));
-    }
-    if (unsyncedInventory.length > 0) {
-      await db.inventory.putAll(markSynced(unsyncedInventory));
-    }
-    if (unsyncedSales.length > 0) {
-      await db.sales.putAll(markSynced(unsyncedSales));
-    }
-    if (unsyncedEmployees.length > 0) {
-      await db.employees.putAll(markSynced(unsyncedEmployees));
-    }
-    if (unsyncedAttendance.length > 0) {
-      await db.attendance.putAll(markSynced(unsyncedAttendance));
-    }
+    // 4. Download updates from Supabase to sync other devices' modifications
+    const remoteMenu = await downloadTable('menu', settings);
+    const remoteInventory = await downloadTable('inventory', settings);
+    const remoteSales = await downloadTable('sales', settings);
+    const remoteEmployees = await downloadTable('employees', settings);
+    const remoteAttendance = await downloadTable('attendance', settings);
+
+    // 5. Upsert downloaded items into local IndexedDB
+    if (remoteMenu.length > 0) await db.menu.putAll(remoteMenu);
+    if (remoteInventory.length > 0) await db.inventory.putAll(remoteInventory);
+    if (remoteSales.length > 0) await db.sales.putAll(remoteSales);
+    if (remoteEmployees.length > 0) await db.employees.putAll(remoteEmployees);
+    if (remoteAttendance.length > 0) await db.attendance.putAll(remoteAttendance);
 
     const totalCount = 
       unsyncedMenu.length + 

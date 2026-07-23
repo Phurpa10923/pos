@@ -90,10 +90,12 @@ export default function App() {
     const settings = getSyncSettings();
     setSyncConfig(settings);
 
+    const isSeeded = localStorage.getItem('db_seeded') === 'true';
+
     try {
       const loadedMenu = await db.menu.getAll();
       let finalMenu = loadedMenu;
-      if (loadedMenu.length === 0) {
+      if (loadedMenu.length === 0 && !isSeeded) {
         const defaultMenu = [
           { id: 'menu_espresso', name: 'Espresso Coffee', category: 'Beverages', price: 80, inventoryId: 'inv_coffee_beans', inventoryQty: 0.02 },
           { id: 'menu_cappuccino', name: 'Cappuccino Coffee', category: 'Beverages', price: 120, inventoryId: 'inv_milk', inventoryQty: 0.25 },
@@ -120,7 +122,7 @@ export default function App() {
 
       const loadedInventory = await db.inventory.getAll();
       let finalInventory = loadedInventory;
-      if (loadedInventory.length === 0) {
+      if (loadedInventory.length === 0 && !isSeeded) {
         const defaultInventory = [
           { id: 'inv_coffee_beans', name: 'Coffee Beans', costPrice: 450, stock: 15.0, unit: 'kg', minStock: 2.0 },
           { id: 'inv_milk', name: 'Whole Milk', costPrice: 60, stock: 45.0, unit: 'L', minStock: 5.0 },
@@ -147,16 +149,23 @@ export default function App() {
       const loadedEmployees = await db.employees.getAll();
       let finalEmployees = loadedEmployees;
       if (loadedEmployees.length === 0) {
-        const defaultEmployees = [
+        // If first run, seed full roster. If wiped, always guarantee at least one admin account exists.
+        const defaultEmployees = !isSeeded ? [
           { id: 'emp_admin', name: 'Admin Manager', role: 'Manager', phone: '9876543210', username: 'admin', password: 'admin123', status: 'active' },
           { id: 'emp_jane', name: 'Jane Smith', role: 'Cashier', phone: '9876543211', username: 'jane', password: 'jane123', status: 'active' },
           { id: 'emp_bob', name: 'Bob Jones', role: 'Server', phone: '9876543212', username: 'bob', password: 'bob123', status: 'active' },
           { id: 'emp_remy', name: 'Chef Remy', role: 'Chef', phone: '9876543213', username: 'remy', password: 'remy123', status: 'active' }
+        ] : [
+          { id: 'emp_admin', name: 'Admin Manager', role: 'Manager', phone: '9876543210', username: 'admin', password: 'admin123', status: 'active' }
         ];
         await db.employees.putAll(defaultEmployees);
         finalEmployees = defaultEmployees;
       }
       setEmployees(finalEmployees);
+
+      if (!isSeeded) {
+        localStorage.setItem('db_seeded', 'true');
+      }
 
       const loadedAttendance = await db.attendance.getAll();
       setAttendance(loadedAttendance);
@@ -213,11 +222,11 @@ export default function App() {
       const allowedViews = {
         Manager: ['dashboard', 'pos', 'menu', 'inventory', 'employees', 'reports', 'settings'],
         Cashier: ['dashboard', 'pos', 'inventory', 'employees'],
-        Server: ['pos', 'employees'],
+        Server: ['pos'],
         Chef: ['inventory', 'employees']
       };
       
-      const allowedList = allowedViews[currentUser.role] || ['pos', 'employees'];
+      const allowedList = allowedViews[currentUser.role] || ['pos'];
       if (!allowedList.includes(view)) {
         setView(allowedList[0]);
       }
@@ -520,11 +529,11 @@ export default function App() {
             const allowedViews = {
               Manager: ['dashboard', 'pos', 'menu', 'inventory', 'employees', 'reports', 'settings'],
               Cashier: ['dashboard', 'pos', 'inventory', 'employees'],
-              Server: ['pos', 'employees'],
+              Server: ['pos'],
               Chef: ['inventory', 'employees']
             };
             const role = currentUser?.role || 'Server';
-            return (allowedViews[role] || ['pos', 'employees']).includes(item.id);
+            return (allowedViews[role] || ['pos']).includes(item.id);
           }).map(item => {
             const Icon = item.icon;
             return (
