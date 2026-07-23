@@ -30,6 +30,8 @@ export default function TablePOS({
   const [discountPercent, setDiscountPercent] = useState(0);
   const [taxType, setTaxType] = useState('GST_5'); // 'NONE', 'GST_5', 'GST_12', 'GST_18', 'VAT_10'
   const [whatsappNumber, setWhatsappNumber] = useState('');
+  const [splitCashAmount, setSplitCashAmount] = useState(0);
+  const [splitUpiAmount, setSplitUpiAmount] = useState(0);
   
   // Add Table state
   const [showAddTableModal, setShowAddTableModal] = useState(false);
@@ -260,6 +262,9 @@ export default function TablePOS({
 
     setDiscountPercent(activeTable.discount || 0);
     setTaxType(activeTable.taxType || 'GST_5');
+    setPaymentMethod('Cash');
+    setSplitCashAmount(0);
+    setSplitUpiAmount(0);
     setShowPaymentModal(true);
   };
 
@@ -289,6 +294,10 @@ export default function TablePOS({
 
     // 2. Create Sale Record (tracking active cashier user)
     const saleId = `TXN-${Date.now().toString().slice(-6)}`;
+    const finalPaymentMethod = paymentMethod === 'Split'
+      ? `Split (Cash: ₹${splitCashAmount.toFixed(2)}, UPI: ₹${splitUpiAmount.toFixed(2)})`
+      : paymentMethod;
+
     const newSale = {
       id: saleId,
       timestamp: new Date().toISOString(),
@@ -306,7 +315,7 @@ export default function TablePOS({
       taxAmount: taxAmount,
       taxBreakdown: taxDetails.breakdown,
       total: finalTotal,
-      paymentMethod: paymentMethod,
+      paymentMethod: finalPaymentMethod,
       cashier: currentUser ? currentUser.name : 'Admin',
       whatsappNumber: whatsappNumber || ''
     };
@@ -335,6 +344,8 @@ export default function TablePOS({
     setReceiptData(newSale);
     setShowPaymentModal(false);
     setShowReceiptModal(true);
+    setSplitCashAmount(0);
+    setSplitUpiAmount(0);
 
     addToast(`Bill closed for ${activeTable.name}. Transaction saved!`);
   };
@@ -686,13 +697,62 @@ export default function TablePOS({
                 <select 
                   className="input-field select-field" 
                   value={paymentMethod}
-                  onChange={(e) => setPaymentMethod(e.target.value)}
+                  onChange={(e) => {
+                    setPaymentMethod(e.target.value);
+                    if (e.target.value === 'Split') {
+                      setSplitCashAmount(finalTotal);
+                      setSplitUpiAmount(0);
+                    }
+                  }}
                 >
                   <option value="Cash">💵 Cash</option>
                   <option value="UPI">📱 UPI/Online</option>
                   <option value="Card">💳 Card</option>
+                  <option value="Split">🔀 Split (Cash + UPI)</option>
                 </select>
               </div>
+
+              {paymentMethod === 'Split' && (
+                <div style={{ background: 'rgba(255,255,255,0.01)', padding: '14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                    <div className="form-group">
+                      <label>Cash Portion (₹)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        max={finalTotal}
+                        step="0.01"
+                        className="input-field"
+                        value={splitCashAmount}
+                        onChange={(e) => {
+                          const cashVal = Math.max(0, Math.min(finalTotal, parseFloat(e.target.value) || 0));
+                          setSplitCashAmount(cashVal);
+                          setSplitUpiAmount(Number((finalTotal - cashVal).toFixed(2)));
+                        }}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>UPI / GPay Portion (₹)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        max={finalTotal}
+                        step="0.01"
+                        className="input-field"
+                        value={splitUpiAmount}
+                        onChange={(e) => {
+                          const upiVal = Math.max(0, Math.min(finalTotal, parseFloat(e.target.value) || 0));
+                          setSplitUpiAmount(upiVal);
+                          setSplitCashAmount(Number((finalTotal - upiVal).toFixed(2)));
+                        }}
+                      />
+                    </div>
+                  </div>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                    Split: ₹{splitCashAmount.toFixed(2)} (Cash) + ₹{splitUpiAmount.toFixed(2)} (UPI) = ₹{finalTotal.toFixed(2)}
+                  </span>
+                </div>
+              )}
 
               <div className="form-group">
                 <label>WhatsApp Number (Optional)</label>

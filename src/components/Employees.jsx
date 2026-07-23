@@ -11,6 +11,7 @@ export default function Employees({
 }) {
   const [showAddModal, setShowAddModal] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [editingEmployee, setEditingEmployee] = useState(null);
   
   // Form states
   const [name, setName] = useState('');
@@ -19,7 +20,7 @@ export default function Employees({
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
 
-  // Save new employee
+  // Save or Update employee
   const handleSaveEmployee = (e) => {
     e.preventDefault();
     if (!name.trim() || !role || !phone.trim() || !username.trim() || !password.trim()) {
@@ -28,28 +29,62 @@ export default function Employees({
     }
 
     // Verify unique username
-    if (employees.some(emp => emp.username === username.toLowerCase())) {
+    if (employees.some(emp => emp.username === username.toLowerCase().trim() && (!editingEmployee || emp.id !== editingEmployee.id))) {
       addToast('Username already taken. Please choose another.', 'error');
       return;
     }
 
-    const newEmp = {
-      id: `emp_${Date.now()}`,
-      name,
-      role,
-      phone,
-      username: username.toLowerCase().trim(),
-      password,
-      status: 'active'
-    };
+    let updatedEmployees;
+    if (editingEmployee) {
+      updatedEmployees = employees.map(emp => 
+        emp.id === editingEmployee.id 
+          ? { ...emp, name, role, phone, username: username.toLowerCase().trim(), password }
+          : emp
+      );
+      addToast('Staff profile updated successfully');
+    } else {
+      const newEmp = {
+        id: `emp_${Date.now()}`,
+        name,
+        role,
+        phone,
+        username: username.toLowerCase().trim(),
+        password,
+        status: 'active'
+      };
+      updatedEmployees = [...employees, newEmp];
+      addToast(`${name} added as ${role}`);
+    }
 
-    onUpdateEmployees([...employees, newEmp]);
+    onUpdateEmployees(updatedEmployees);
+    handleCloseModal();
+  };
+
+  const handleOpenEdit = (employee) => {
+    setEditingEmployee(employee);
+    setName(employee.name);
+    setRole(employee.role);
+    setPhone(employee.phone);
+    setUsername(employee.username);
+    setPassword(employee.password);
+    setShowAddModal(true);
+  };
+
+  const handleDeleteEmployee = (employeeId) => {
+    if (confirm('Are you sure you want to permanently delete this employee from the system?')) {
+      const updatedEmployees = employees.filter(emp => emp.id !== employeeId);
+      onUpdateEmployees(updatedEmployees);
+      addToast('Employee deleted from roster', 'info');
+    }
+  };
+
+  const handleCloseModal = () => {
     setName('');
     setPhone('');
     setUsername('');
     setPassword('');
+    setEditingEmployee(null);
     setShowAddModal(false);
-    addToast(`${name} added as ${role}`);
   };
 
   // Clock In Employee
@@ -328,7 +363,7 @@ export default function Employees({
                   <th>Staff Name</th>
                   <th>Role</th>
                   <th>Status</th>
-                  <th style={{ textAlign: 'right' }}>Toggle</th>
+                  <th style={{ textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -345,13 +380,29 @@ export default function Employees({
                       </span>
                     </td>
                     <td style={{ textAlign: 'right' }}>
-                      <button 
-                        className={`btn ${emp.status === 'active' ? 'btn-danger' : 'btn-primary'}`}
-                        style={{ padding: '4px 8px', fontSize: '11px', borderRadius: 'var(--radius-xs)' }}
-                        onClick={() => handleToggleStatus(emp.id)}
-                      >
-                        {emp.status === 'active' ? 'Disable' : 'Enable'}
-                      </button>
+                      <div style={{ display: 'inline-flex', gap: '6px' }}>
+                        <button 
+                          className="btn btn-secondary"
+                          style={{ padding: '4px 8px', fontSize: '11px', borderRadius: 'var(--radius-xs)' }}
+                          onClick={() => handleOpenEdit(emp)}
+                        >
+                          Edit
+                        </button>
+                        <button 
+                          className="btn btn-danger"
+                          style={{ padding: '4px 8px', fontSize: '11px', borderRadius: 'var(--radius-xs)' }}
+                          onClick={() => handleDeleteEmployee(emp.id)}
+                        >
+                          Delete
+                        </button>
+                        <button 
+                          className={`btn ${emp.status === 'active' ? 'btn-secondary' : 'btn-primary'}`}
+                          style={{ padding: '4px 8px', fontSize: '11px', borderRadius: 'var(--radius-xs)' }}
+                          onClick={() => handleToggleStatus(emp.id)}
+                        >
+                          {emp.status === 'active' ? 'Disable' : 'Enable'}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -366,8 +417,8 @@ export default function Employees({
         <div className="overlay">
           <div className="glass-panel modal-content" style={{ maxWidth: '400px' }}>
             <div className="modal-header">
-              <h2>Add Roster Staff</h2>
-              <button className="close-btn" onClick={() => setShowAddModal(false)}>×</button>
+              <h2>{editingEmployee ? 'Edit Roster Staff' : 'Add Roster Staff'}</h2>
+              <button className="close-btn" onClick={handleCloseModal}>×</button>
             </div>
             <form onSubmit={handleSaveEmployee}>
               <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
@@ -435,8 +486,8 @@ export default function Employees({
                 </div>
               </div>
               <div className="modal-footer">
-                <button type="button" className="btn btn-secondary" onClick={() => setShowAddModal(false)}>Cancel</button>
-                <button type="submit" className="btn btn-primary">Add Staff</button>
+                <button type="button" className="btn btn-secondary" onClick={handleCloseModal}>Cancel</button>
+                <button type="submit" className="btn btn-primary">{editingEmployee ? 'Save Changes' : 'Add Staff'}</button>
               </div>
             </form>
           </div>

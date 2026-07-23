@@ -11,6 +11,7 @@ export default function Menu({
   const [searchQuery, setSearchQuery] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
+  const [selectedIds, setSelectedIds] = useState([]);
 
   // Form states
   const [name, setName] = useState('');
@@ -82,12 +83,14 @@ export default function Menu({
     }
 
     onUpdateMenu(updatedMenu);
+    setSelectedIds([]); // clear selection
     setShowAddModal(false);
   };
 
   const handleDeleteItem = (itemId) => {
     if (confirm('Delete this item from the active menu?')) {
       onUpdateMenu(menu.filter(m => m.id !== itemId));
+      setSelectedIds(selectedIds.filter(id => id !== itemId));
       addToast('Menu item deleted', 'info');
     }
   };
@@ -131,6 +134,7 @@ export default function Menu({
 
     onUpdateInventory(mockInventory);
     onUpdateMenu(mockMenu);
+    setSelectedIds([]);
     addToast('Sample Menu and Wholesale Inventory seeded successfully!');
   };
 
@@ -151,6 +155,20 @@ export default function Menu({
         </div>
 
         <div style={{ display: 'flex', gap: '10px' }}>
+          {selectedIds.length > 0 && (
+            <button 
+              className="btn btn-danger" 
+              onClick={() => {
+                if (confirm(`Are you sure you want to permanently delete the ${selectedIds.length} selected menu items?`)) {
+                  onUpdateMenu(menu.filter(m => !selectedIds.includes(m.id)));
+                  setSelectedIds([]);
+                  addToast(`${selectedIds.length} menu items deleted`);
+                }
+              }}
+            >
+              <Trash2 size={16} /> Delete Selected ({selectedIds.length})
+            </button>
+          )}
           {menu.length === 0 && (
             <button className="btn btn-secondary" onClick={handleSeedMenu}>
               <RotateCcw size={16} /> Seed Menu & Wholesale
@@ -173,6 +191,19 @@ export default function Menu({
             <table className="data-table">
               <thead>
                 <tr>
+                  <th style={{ width: '40px' }}>
+                    <input 
+                      type="checkbox"
+                      checked={filteredMenu.length > 0 && selectedIds.length === filteredMenu.length}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedIds(filteredMenu.map(item => item.id));
+                        } else {
+                          setSelectedIds([]);
+                        }
+                      }}
+                    />
+                  </th>
                   <th>Item Name</th>
                   <th>Category</th>
                   <th>Customer Price</th>
@@ -182,7 +213,20 @@ export default function Menu({
               <tbody>
                 {filteredMenu.map(item => {
                   return (
-                    <tr key={item.id}>
+                    <tr key={item.id} style={{ background: selectedIds.includes(item.id) ? 'rgba(239, 68, 68, 0.05)' : '' }}>
+                      <td>
+                        <input 
+                          type="checkbox"
+                          checked={selectedIds.includes(item.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedIds([...selectedIds, item.id]);
+                            } else {
+                              setSelectedIds(selectedIds.filter(id => id !== item.id));
+                            }
+                          }}
+                        />
+                      </td>
                       <td style={{ fontWeight: '600' }}>{item.name}</td>
                       <td><span className="badge badge-muted">{item.category}</span></td>
                       <td style={{ fontWeight: '700', color: 'var(--accent-teal)' }}>₹{item.price.toFixed(2)}</td>

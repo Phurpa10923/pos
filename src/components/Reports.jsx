@@ -14,6 +14,9 @@ export default function Reports({
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7)); // YYYY-MM
   const [reportSales, setReportSales] = useState([]);
+  const [showReceiptModal, setShowReceiptModal] = useState(false);
+  const [receiptData, setReceiptData] = useState(null);
+  const [whatsappNumber, setWhatsappNumber] = useState('');
 
   // Fetch report data on demand from IndexedDB (extremely fast via timestamp index)
   useEffect(() => {
@@ -733,12 +736,12 @@ export default function Reports({
                 </thead>
                 <tbody>
                   {currentPeriodSales.slice().reverse().map(sale => (
-                    <tr key={sale.id}>
+                    <tr key={sale.id} onClick={() => { setReceiptData(sale); setShowReceiptModal(true); }} style={{ cursor: 'pointer' }} title="Click to view full receipt">
                       <td style={{ fontWeight: '500' }}>{sale.id}</td>
                       <td>{sale.tableName}</td>
                       <td>
-                        <span className={`badge ${sale.paymentMethod === 'Cash' ? 'badge-teal' : sale.paymentMethod === 'Card' ? 'badge-indigo' : 'badge-emerald'}`}>
-                          {sale.paymentMethod}
+                        <span className={`badge ${sale.paymentMethod.startsWith('Cash') ? 'badge-teal' : sale.paymentMethod.includes('UPI') || sale.paymentMethod.includes('GPay') ? 'badge-emerald' : 'badge-indigo'}`}>
+                          {sale.paymentMethod.length > 10 ? sale.paymentMethod.split(' ')[0] : sale.paymentMethod}
                         </span>
                       </td>
                       <td>
@@ -800,8 +803,131 @@ export default function Reports({
             </table>
           </div>
         )}
-      </div>
+      {/* Modal: Receipt Preview & Printing */}
+      {showReceiptModal && receiptData && (
+        <div className="overlay">
+          <div className="glass-panel modal-content" style={{ maxWidth: '400px', background: 'var(--bg-secondary)', zIndex: 10001 }}>
+            <div className="modal-header">
+              <h2>Receipt Details</h2>
+              <button className="close-btn" onClick={() => setShowReceiptModal(false)}>×</button>
+            </div>
+            <div className="modal-body" style={{ maxHeight: '60vh', overflowY: 'auto' }}>
+              <div className="receipt-preview">
+                <div className="receipt-header">
+                  <h3>AURAPOS BILLING</h3>
+                  <p>Date: {new Date(receiptData.timestamp).toLocaleDateString()}</p>
+                  <p>Time: {new Date(receiptData.timestamp).toLocaleTimeString()}</p>
+                  <p>Bill ID: {receiptData.id}</p>
+                  <p>Table: {receiptData.tableName}</p>
+                  <p>Served by: {receiptData.cashier || 'Admin'}</p>
+                </div>
+                
+                <div className="receipt-items">
+                  {receiptData.items.map((item, idx) => (
+                    <div key={idx} className="receipt-item-row">
+                      <span>{item.name} x {item.quantity}</span>
+                      <span>₹{(item.price * item.quantity).toFixed(2)}</span>
+                    </div>
+                  ))}
+                </div>
 
+                <div className="receipt-totals">
+                  <div className="receipt-total-row">
+                    <span>Subtotal:</span>
+                    <span>₹{receiptData.subtotal.toFixed(2)}</span>
+                  </div>
+                  {receiptData.discount > 0 && (
+                    <div className="receipt-total-row">
+                      <span>Discount ({receiptData.discount}%):</span>
+                      <span>-₹{((receiptData.subtotal * receiptData.discount) / 100).toFixed(2)}</span>
+                    </div>
+                  )}
+                  {receiptData.taxBreakdown && receiptData.taxBreakdown.length > 0 ? (
+                    receiptData.taxBreakdown.map((taxItem, idx) => (
+                      <div key={idx} className="receipt-total-row">
+                        <span>{taxItem.label}:</span>
+                        <span>₹{taxItem.amount.toFixed(2)}</span>
+                      </div>
+                    ))
+                  ) : (
+                    receiptData.tax > 0 && (
+                      <div className="receipt-total-row">
+                        <span>Tax ({receiptData.tax}%):</span>
+                        <span>₹{(((receiptData.subtotal - (receiptData.subtotal * receiptData.discount) / 100) * receiptData.tax) / 100).toFixed(2)}</span>
+                      </div>
+                    )
+                  )}
+                  <div className="receipt-total-row grand">
+                    <span>Paid Total ({receiptData.paymentMethod}):</span>
+                    <span>₹{receiptData.total.toFixed(2)}</span>
+                  </div>
+                </div>
+
+                <div className="receipt-footer">
+                  <p>Thank You For Your Visit!</p>
+                  <p>AuraPOS Offline System</p>
+                </div>
+              </div>
+
+              {/* WhatsApp E-bill Sharing Box */}
+              <div style={{ marginTop: '20px', padding: '16px', background: 'rgba(16, 185, 129, 0.05)', border: '1px solid rgba(16, 185, 129, 0.15)', borderRadius: 'var(--radius-md)' }}>
+                <h4 style={{ fontSize: '14px', fontWeight: '600', color: 'var(--accent-emerald)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  💚 Send E-Bill via WhatsApp
+                </h4>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <input
+                    type="tel"
+                    className="input-field"
+                    placeholder="e.g. 919876543210"
+                    value={whatsappNumber || receiptData.whatsappNumber || ''}
+                    onChange={(e) => setWhatsappNumber(e.target.value.replace(/[^0-9+]/g, ''))}
+                    style={{ flex: 1, height: '38px', background: 'rgba(0,0,0,0.2)' }}
+                  />
+                  <button
+                    className="btn"
+                    onClick={() => {
+                      const phoneNum = whatsappNumber || receiptData.whatsappNumber;
+                      if (!phoneNum) {
+                        addToast('Please enter a WhatsApp number', 'warning');
+                        return;
+                      }
+                      const cleanPhone = phoneNum.replace(/\D/g, '');
+                      const itemsText = receiptData.items.map(item => `${item.name} x ${item.quantity} : ₹${(item.price * item.quantity).toFixed(2)}`).join('\n');
+                      const discountText = receiptData.discount > 0 ? `Discount (${receiptData.discount}%): -₹${((receiptData.subtotal * receiptData.discount) / 100).toFixed(2)}\n` : '';
+                      let taxText = '';
+                      if (receiptData.taxBreakdown && receiptData.taxBreakdown.length > 0) {
+                        taxText = receiptData.taxBreakdown.map(taxItem => `${taxItem.label}: ₹${taxItem.amount.toFixed(2)}`).join('\n') + '\n';
+                      } else if (receiptData.tax > 0) {
+                        taxText = `Tax (${receiptData.tax}%): ₹${(((receiptData.subtotal - (receiptData.subtotal * receiptData.discount) / 100) * receiptData.tax) / 100).toFixed(2)}\n`;
+                      }
+                      
+                      const message = `*--- AuraPOS E-BILL ---*\n*Bill ID:* ${receiptData.id}\n*Date:* ${new Date(receiptData.timestamp).toLocaleDateString()}\n*Time:* ${new Date(receiptData.timestamp).toLocaleTimeString()}\n*Table:* ${receiptData.tableName}\n-------------------------------------\n${itemsText}\n-------------------------------------\n*Subtotal:* ₹${receiptData.subtotal.toFixed(2)}\n${discountText}${taxText}*Grand Total:* ₹${receiptData.total.toFixed(2)}\n*Payment:* ${receiptData.paymentMethod}\n*Cashier:* ${receiptData.cashier || 'Admin'}\n-------------------------------------\nThank you for your visit!\nPowered by AuraPOS.`;
+
+                      const url = `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(message)}`;
+                      window.open(url, '_blank');
+                      addToast('Redirecting to WhatsApp...');
+                    }}
+                    style={{ height: '38px', padding: '0 16px', background: 'var(--accent-emerald)', color: '#fff', border: 'none', borderRadius: 'var(--radius-sm)', fontWeight: '600', cursor: 'pointer' }}
+                  >
+                    Send
+                  </button>
+                </div>
+              </div>
+
+            </div>
+            <div className="modal-footer" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+              <button className="btn btn-secondary" onClick={() => window.print()}>
+                Print Receipt
+              </button>
+              <button className="btn btn-primary" onClick={() => { setShowReceiptModal(false); setWhatsappNumber(''); }}>
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      </div>
     </div>
   );
 }

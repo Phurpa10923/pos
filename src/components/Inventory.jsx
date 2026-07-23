@@ -12,6 +12,7 @@ export default function Inventory({
   const [searchQuery, setSearchQuery] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
+  const [selectedIds, setSelectedIds] = useState([]);
 
   // Form states
   const [name, setName] = useState('');
@@ -83,12 +84,14 @@ export default function Inventory({
     }
 
     onUpdateInventory(updatedInventory);
+    setSelectedIds([]); // clear selection
     setShowAddModal(false);
   };
 
   const handleDeleteItem = (itemId) => {
     if (confirm('Are you sure you want to delete this raw material from stock? It may break menu recipe linkages.')) {
       onUpdateInventory(inventory.filter(i => i.id !== itemId));
+      setSelectedIds(selectedIds.filter(id => id !== itemId));
       addToast('Inventory item deleted', 'info');
     }
   };
@@ -120,11 +123,27 @@ export default function Inventory({
           />
         </div>
 
-        {canModify && (
-          <button className="btn btn-primary" onClick={handleOpenAdd}>
-            <Plus size={16} /> Add Wholesale Material
-          </button>
-        )}
+        <div style={{ display: 'flex', gap: '10px' }}>
+          {canModify && selectedIds.length > 0 && (
+            <button 
+              className="btn btn-danger" 
+              onClick={() => {
+                if (confirm(`Are you sure you want to permanently delete the ${selectedIds.length} selected items?`)) {
+                  onUpdateInventory(inventory.filter(i => !selectedIds.includes(i.id)));
+                  setSelectedIds([]);
+                  addToast(`${selectedIds.length} inventory items deleted`);
+                }
+              }}
+            >
+              <Trash2 size={16} /> Delete Selected ({selectedIds.length})
+            </button>
+          )}
+          {canModify && (
+            <button className="btn btn-primary" onClick={handleOpenAdd}>
+              <Plus size={16} /> Add Wholesale Material
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Stock List Grid */}
@@ -138,6 +157,21 @@ export default function Inventory({
             <table className="data-table">
               <thead>
                 <tr>
+                  {canModify && (
+                    <th style={{ width: '40px' }}>
+                      <input 
+                        type="checkbox"
+                        checked={filteredInventory.length > 0 && selectedIds.length === filteredInventory.length}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedIds(filteredInventory.map(item => item.id));
+                          } else {
+                            setSelectedIds([]);
+                          }
+                        }}
+                      />
+                    </th>
+                  )}
                   <th>Wholesale Material</th>
                   <th>Wholesale Cost</th>
                   <th>Current Stock</th>
@@ -155,7 +189,22 @@ export default function Inventory({
                   const isLow = stockLevel <= Number(item.minStock);
 
                   return (
-                    <tr key={item.id}>
+                    <tr key={item.id} style={{ background: selectedIds.includes(item.id) ? 'rgba(239, 68, 68, 0.05)' : '' }}>
+                      {canModify && (
+                        <td>
+                          <input 
+                            type="checkbox"
+                            checked={selectedIds.includes(item.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedIds([...selectedIds, item.id]);
+                              } else {
+                                setSelectedIds(selectedIds.filter(id => id !== item.id));
+                              }
+                            }}
+                          />
+                        </td>
+                      )}
                       <td style={{ fontWeight: '600' }}>{item.name}</td>
                       <td style={{ color: 'var(--text-secondary)' }}>₹{item.costPrice.toFixed(2)}</td>
                       <td style={{ fontWeight: 'bold', color: isOut ? 'var(--accent-coral)' : isLow ? 'var(--accent-amber)' : 'var(--accent-emerald)' }}>
