@@ -31,7 +31,11 @@ function toSnakeCase(item, tableName) {
   }
   
   if (tableName === 'menu') {
-    if ('inventoryId' in converted) { converted.inventory_id = converted.inventoryId; delete converted.inventoryId; }
+    if ('inventoryId' in converted) { 
+      const rawId = converted.inventoryId;
+      converted.inventory_id = (rawId && typeof rawId === 'string' && rawId.trim()) ? rawId : null;
+      delete converted.inventoryId; 
+    }
     if ('inventoryQty' in converted) { converted.inventory_qty = converted.inventoryQty; delete converted.inventoryQty; }
   }
   
@@ -197,31 +201,31 @@ export async function performCloudSync(addToast) {
     const unsyncedEmployees = localEmployees.filter(item => !item.synced);
     const unsyncedAttendance = localAttendance.filter(item => !item.synced);
 
-    // 2. Upload local offline actions to Supabase
-    if (unsyncedMenu.length > 0) await uploadTable('menu', unsyncedMenu, settings);
+    // 2. Upload local offline actions to Supabase (Upload dependencies first)
     if (unsyncedInventory.length > 0) await uploadTable('inventory', unsyncedInventory, settings);
+    if (unsyncedMenu.length > 0) await uploadTable('menu', unsyncedMenu, settings);
     if (unsyncedSales.length > 0) await uploadTable('sales', unsyncedSales, settings);
     if (unsyncedEmployees.length > 0) await uploadTable('employees', unsyncedEmployees, settings);
     if (unsyncedAttendance.length > 0) await uploadTable('attendance', unsyncedAttendance, settings);
 
     // 3. Mark successfully uploaded items as synced locally in IndexedDB
     const markSynced = (list) => list.map(item => ({ ...item, synced: true }));
-    if (unsyncedMenu.length > 0) await db.menu.putAll(markSynced(unsyncedMenu));
     if (unsyncedInventory.length > 0) await db.inventory.putAll(markSynced(unsyncedInventory));
+    if (unsyncedMenu.length > 0) await db.menu.putAll(markSynced(unsyncedMenu));
     if (unsyncedSales.length > 0) await db.sales.putAll(markSynced(unsyncedSales));
     if (unsyncedEmployees.length > 0) await db.employees.putAll(markSynced(unsyncedEmployees));
     if (unsyncedAttendance.length > 0) await db.attendance.putAll(markSynced(unsyncedAttendance));
 
     // 4. Download updates from Supabase to sync other devices' modifications
-    const remoteMenu = await downloadTable('menu', settings);
     const remoteInventory = await downloadTable('inventory', settings);
+    const remoteMenu = await downloadTable('menu', settings);
     const remoteSales = await downloadTable('sales', settings);
     const remoteEmployees = await downloadTable('employees', settings);
     const remoteAttendance = await downloadTable('attendance', settings);
 
     // 5. Upsert downloaded items into local IndexedDB
-    if (remoteMenu.length > 0) await db.menu.putAll(remoteMenu);
     if (remoteInventory.length > 0) await db.inventory.putAll(remoteInventory);
+    if (remoteMenu.length > 0) await db.menu.putAll(remoteMenu);
     if (remoteSales.length > 0) await db.sales.putAll(remoteSales);
     if (remoteEmployees.length > 0) await db.employees.putAll(remoteEmployees);
     if (remoteAttendance.length > 0) await db.attendance.putAll(remoteAttendance);
