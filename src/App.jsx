@@ -8,7 +8,8 @@ import Employees from './components/Employees';
 import Reports from './components/Reports';
 import SettingsTab from './components/Settings';
 
-import { getSyncSettings, performCloudSync } from './sync';
+import { getSyncSettings, saveSyncSettings, performCloudSync } from './sync';
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config';
 
 import { 
   LayoutDashboard, 
@@ -282,7 +283,11 @@ export default function App() {
 
     // 1. Cloud Linkage Setup Login Flow
     if (showCloudSetup) {
-      if (!cloudUrl.trim() || !cloudKey.trim() || !cloudRestId.trim()) {
+      const activeUrl = (SUPABASE_URL || cloudUrl).trim();
+      const activeKey = (SUPABASE_ANON_KEY || cloudKey).trim();
+      const activeRestId = cloudRestId.trim();
+
+      if (!activeUrl || !activeKey || !activeRestId) {
         addToast('Please enter all cloud connection credentials', 'warning');
         return;
       }
@@ -294,11 +299,11 @@ export default function App() {
 
       setIsVerifying(true);
       try {
-        const response = await fetch(`${cloudUrl.trim()}/rest/v1/employees?restaurant_id=eq.${encodeURIComponent(cloudRestId.trim())}`, {
+        const response = await fetch(`${activeUrl}/rest/v1/employees?restaurant_id=eq.${encodeURIComponent(activeRestId)}`, {
           method: 'GET',
           headers: {
-            'apikey': cloudKey.trim(),
-            'Authorization': `Bearer ${cloudKey.trim()}`,
+            'apikey': activeKey,
+            'Authorization': `Bearer ${activeKey}`,
             'Content-Type': 'application/json'
           }
         });
@@ -314,8 +319,8 @@ export default function App() {
         }
 
         // Save cloud settings
-        saveSyncSettings(true, cloudUrl.trim(), cloudKey.trim(), cloudRestId.trim());
-        setSyncConfig({ enabled: true, url: cloudUrl.trim(), password: cloudKey.trim(), restaurantId: cloudRestId.trim() });
+        saveSyncSettings(true, activeUrl, activeKey, activeRestId);
+        setSyncConfig({ enabled: true, url: activeUrl, password: activeKey, restaurantId: activeRestId });
         localStorage.setItem('db_seeded', 'true');
 
         // Save employees list locally
@@ -571,31 +576,35 @@ export default function App() {
               <div style={{ padding: '12px', background: 'rgba(255,255,255,0.02)', borderRadius: 'var(--radius-sm)', border: '1px dashed var(--border-color)', display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '4px' }}>
                 <h4 style={{ fontSize: '12px', fontWeight: '600', color: 'var(--accent-teal)', margin: '0' }}>Cloud Database Settings</h4>
                 
-                <div className="form-group" style={{ margin: 0 }}>
-                  <label style={{ fontSize: '10px' }}>Supabase Project URL</label>
-                  <input 
-                    type="url" 
-                    required={showCloudSetup}
-                    className="input-field" 
-                    placeholder="https://your-project.supabase.co" 
-                    value={cloudUrl}
-                    onChange={(e) => setCloudUrl(e.target.value)}
-                    style={{ padding: '6px 10px', fontSize: '12px' }}
-                  />
-                </div>
+                {(!SUPABASE_URL || !SUPABASE_ANON_KEY) && (
+                  <>
+                    <div className="form-group" style={{ margin: 0 }}>
+                      <label style={{ fontSize: '10px' }}>Supabase Project URL</label>
+                      <input 
+                        type="url" 
+                        required={showCloudSetup && !SUPABASE_URL}
+                        className="input-field" 
+                        placeholder="https://your-project.supabase.co" 
+                        value={cloudUrl}
+                        onChange={(e) => setCloudUrl(e.target.value)}
+                        style={{ padding: '6px 10px', fontSize: '12px' }}
+                      />
+                    </div>
 
-                <div className="form-group" style={{ margin: 0 }}>
-                  <label style={{ fontSize: '10px' }}>Supabase Anon Key</label>
-                  <input 
-                    type="password" 
-                    required={showCloudSetup}
-                    className="input-field" 
-                    placeholder="your-anon-key" 
-                    value={cloudKey}
-                    onChange={(e) => setCloudKey(e.target.value)}
-                    style={{ padding: '6px 10px', fontSize: '12px' }}
-                  />
-                </div>
+                    <div className="form-group" style={{ margin: 0 }}>
+                      <label style={{ fontSize: '10px' }}>Supabase Anon Key</label>
+                      <input 
+                        type="password" 
+                        required={showCloudSetup && !SUPABASE_ANON_KEY}
+                        className="input-field" 
+                        placeholder="your-anon-key" 
+                        value={cloudKey}
+                        onChange={(e) => setCloudKey(e.target.value)}
+                        style={{ padding: '6px 10px', fontSize: '12px' }}
+                      />
+                    </div>
+                  </>
+                )}
 
                 <div className="form-group" style={{ margin: 0 }}>
                   <label style={{ fontSize: '10px' }}>Restaurant ID (Tenant ID)</label>
@@ -656,7 +665,7 @@ export default function App() {
               }}
               style={{ fontSize: '11px', padding: '6px 12px' }}
             >
-              {showCloudSetup ? 'Cancel Cloud Connection' : 'Connect New Restaurant (Cloud)'}
+              {showCloudSetup ? 'Cancel Cloud Connection' : (SUPABASE_URL && SUPABASE_ANON_KEY) ? 'Connect Restaurant (Cloud)' : 'Connect New Restaurant (Cloud)'}
             </button>
 
             <div style={{ textAlign: 'center', fontSize: '10px', color: 'var(--text-muted)' }}>

@@ -1,12 +1,16 @@
 import { db } from './db';
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config';
 
 // Helper to check sync status from localStorage settings
 export function getSyncSettings() {
+  const hasCentralDb = !!SUPABASE_URL && !!SUPABASE_ANON_KEY;
+  const restaurantId = localStorage.getItem('restaurant_id') || '';
+  
   return {
-    enabled: localStorage.getItem('cloud_sync_enabled') === 'true',
-    url: localStorage.getItem('cloud_sync_url') || '',
-    password: localStorage.getItem('cloud_sync_password') || '',
-    restaurantId: localStorage.getItem('restaurant_id') || 'my_restaurant'
+    enabled: localStorage.getItem('cloud_sync_enabled') === 'true' || (hasCentralDb && !!restaurantId),
+    url: localStorage.getItem('cloud_sync_url') || SUPABASE_URL || '',
+    password: localStorage.getItem('cloud_sync_password') || SUPABASE_ANON_KEY || '',
+    restaurantId: restaurantId
   };
 }
 
