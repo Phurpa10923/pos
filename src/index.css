@@ -351,20 +351,26 @@ body {
 
 .pos-split {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   height: 100%;
   gap: 16px;
   overflow: hidden;
+  /* tables-pane and pos-split are never shown at the same time (see
+     TablePOS.jsx mobileTab), so when this is visible it should use the
+     full pos-layout width rather than being squeezed into the first
+     grid column while the second sits empty. */
+  grid-column: 1 / -1;
 }
 
 .pos-split > .catalog-pane {
-  flex: 1.2;
+  flex: 1;
+  min-width: 0;
   min-height: 0;
   height: auto;
 }
 
 .pos-split > .ticket-pane {
-  flex: 1;
+  flex: 0 0 380px;
   min-height: 0;
   height: auto;
 }
