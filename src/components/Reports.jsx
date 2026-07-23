@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { db } from '../db';
+import { dbFetchSalesByRange } from '../cloudDb';
 import { Calendar, Download, RefreshCw, BarChart2, TrendingUp, PieChart, IndianRupee } from 'lucide-react';
 
 export default function Reports({
@@ -8,19 +8,22 @@ export default function Reports({
   inventory = [],
   attendance = [],
   addToast,
-  onSeedSales
+  onSeedSales,
+  restaurantName = ''
 }) {
   const [reportType, setReportType] = useState('daily'); // 'daily' or 'monthly'
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7)); // YYYY-MM
   const [reportSales, setReportSales] = useState([]);
+  const [isLoadingReport, setIsLoadingReport] = useState(false);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [receiptData, setReceiptData] = useState(null);
   const [whatsappNumber, setWhatsappNumber] = useState('');
 
-  // Fetch report data on demand from IndexedDB (extremely fast via timestamp index)
+  // Fetch report data on demand directly from Supabase for the selected range
   useEffect(() => {
     async function fetchReportData() {
+      setIsLoadingReport(true);
       try {
         let start, end;
         if (reportType === 'daily') {
@@ -35,13 +38,17 @@ export default function Reports({
           const lastDay = new Date(year, month, 0).getDate();
           end = `${selectedMonth}-${lastDay}T23:59:59.999Z`;
         }
-        const data = await db.sales.getByDateRange(start, end);
+        const data = await dbFetchSalesByRange(start, end);
         setReportSales(data);
       } catch (err) {
         console.error('Failed to fetch sales by date range:', err);
+        addToast(`Failed to load report data: ${err.message}`, 'error');
+      } finally {
+        setIsLoadingReport(false);
       }
     }
     fetchReportData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reportType, selectedDate, selectedMonth, sales]);
 
   // Helper date parsing
@@ -55,7 +62,7 @@ export default function Reports({
     return new Promise((resolve) => {
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
-      const storeName = localStorage.getItem('restaurantName') || 'PortablePOS';
+      const storeName = restaurantName || 'PortablePOS';
       
       const width = 400;
       const itemHeight = 25;
@@ -177,7 +184,7 @@ export default function Reports({
   const handleShareReceiptImage = async () => {
     if (!receiptData) return;
     try {
-      const storeName = localStorage.getItem('restaurantName') || 'PortablePOS';
+      const storeName = restaurantName || 'PortablePOS';
       const blob = await generateReceiptImageBlob(receiptData);
       const file = new File([blob], `Bill-${receiptData.id}.png`, { type: 'image/png' });
       
@@ -700,6 +707,12 @@ export default function Reports({
             </div>
           )}
 
+          {isLoadingReport && (
+            <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: 'var(--text-secondary)' }}>
+              <RefreshCw size={13} className="spin-icon" /> Loading…
+            </span>
+          )}
+
           <button className="btn btn-secondary" onClick={handleExportCSV}>
             <Download size={16} /> Export CSV
           </button>
@@ -960,7 +973,7 @@ export default function Reports({
             <div className="modal-body" style={{ maxHeight: '60vh', overflowY: 'auto' }}>
               <div className="receipt-preview">
                 <div className="receipt-header">
-                  <h3>{(localStorage.getItem('restaurantName') || 'PortablePOS').toUpperCase()}</h3>
+                  <h3>{(restaurantName || 'PortablePOS').toUpperCase()}</h3>
                   <p>Date: {new Date(receiptData.timestamp).toLocaleDateString()}</p>
                   <p>Time: {new Date(receiptData.timestamp).toLocaleTimeString()}</p>
                   <p>Bill ID: {receiptData.id}</p>
@@ -1011,7 +1024,7 @@ export default function Reports({
 
                 <div className="receipt-footer">
                   <p>Thank You For Your Visit!</p>
-                  <p>{localStorage.getItem('restaurantName') || 'PortablePOS'} Offline System</p>
+                  <p>{restaurantName || 'PortablePOS'}</p>
                 </div>
               </div>
 
@@ -1047,7 +1060,7 @@ export default function Reports({
                         taxText = `Tax (${receiptData.tax}%): ₹${(((receiptData.subtotal - (receiptData.subtotal * receiptData.discount) / 100) * receiptData.tax) / 100).toFixed(2)}\n`;
                       }
                       
-                      const storeName = localStorage.getItem('restaurantName') || 'PortablePOS';
+                      const storeName = restaurantName || 'PortablePOS';
                       const message = `*--- ${storeName.toUpperCase()} E-BILL ---*\n*Bill ID:* ${receiptData.id}\n*Date:* ${new Date(receiptData.timestamp).toLocaleDateString()}\n*Time:* ${new Date(receiptData.timestamp).toLocaleTimeString()}\n*Table:* ${receiptData.tableName}\n-------------------------------------\n${itemsText}\n-------------------------------------\n*Subtotal:* ₹${receiptData.subtotal.toFixed(2)}\n${discountText}${taxText}*Grand Total:* ₹${receiptData.total.toFixed(2)}\n*Payment:* ${receiptData.paymentMethod}\n*Server:* ${receiptData.server_name || 'System'}\n*Cashier:* ${receiptData.cashier || 'Admin'}\n-------------------------------------\nThank you for your visit!\nPowered by ${storeName}.`;
 
                       const url = `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(message)}`;

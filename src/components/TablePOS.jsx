@@ -10,7 +10,8 @@ export default function TablePOS({
   onUpdateInventory,
   onAddSale,
   addToast,
-  currentUser
+  currentUser,
+  restaurantName = ''
 }) {
   const [selectedTable, setSelectedTable] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -383,7 +384,7 @@ export default function TablePOS({
     return new Promise((resolve) => {
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
-      const storeName = localStorage.getItem('restaurantName') || 'PortablePOS';
+      const storeName = restaurantName || 'PortablePOS';
       
       const width = 400;
       const itemHeight = 25;
@@ -506,7 +507,7 @@ export default function TablePOS({
   const handleShareReceiptImage = async () => {
     if (!receiptData) return;
     try {
-      const storeName = localStorage.getItem('restaurantName') || 'PortablePOS';
+      const storeName = restaurantName || 'PortablePOS';
       const blob = await generateReceiptImageBlob(receiptData);
       const file = new File([blob], `Bill-${receiptData.id}.png`, { type: 'image/png' });
       
@@ -954,7 +955,7 @@ export default function TablePOS({
             <div className="modal-body" style={{ maxHeight: '60vh', overflowY: 'auto' }}>
               <div className="receipt-preview">
                 <div className="receipt-header">
-                  <h3>{(localStorage.getItem('restaurantName') || 'PortablePOS').toUpperCase()}</h3>
+                  <h3>{(restaurantName || 'PortablePOS').toUpperCase()}</h3>
                   <p>Date: {new Date(receiptData.timestamp).toLocaleDateString()}</p>
                   <p>Time: {new Date(receiptData.timestamp).toLocaleTimeString()}</p>
                   <p>Bill ID: {receiptData.id}</p>
@@ -1005,7 +1006,7 @@ export default function TablePOS({
 
                 <div className="receipt-footer">
                   <p>Thank You For Your Visit!</p>
-                  <p>{localStorage.getItem('restaurantName') || 'PortablePOS'} Offline System</p>
+                  <p>{restaurantName || 'PortablePOS'}</p>
                 </div>
               </div>
 
@@ -1040,7 +1041,7 @@ export default function TablePOS({
                       } else if (receiptData.tax > 0) {
                         taxText = `Tax (${receiptData.tax}%): ₹${(((receiptData.subtotal - (receiptData.subtotal * receiptData.discount) / 100) * receiptData.tax) / 100).toFixed(2)}\n`;
                       }
-                      const storeName = localStorage.getItem('restaurantName') || 'PortablePOS';
+                      const storeName = restaurantName || 'PortablePOS';
                       const message = `*--- ${storeName.toUpperCase()} E-BILL ---*\n*Bill ID:* ${receiptData.id}\n*Date:* ${new Date(receiptData.timestamp).toLocaleDateString()}\n*Time:* ${new Date(receiptData.timestamp).toLocaleTimeString()}\n*Table:* ${receiptData.tableName}\n-------------------------------------\n${itemsText}\n-------------------------------------\n*Subtotal:* ₹${receiptData.subtotal.toFixed(2)}\n${discountText}${taxText}*Grand Total:* ₹${receiptData.total.toFixed(2)}\n*Payment:* ${receiptData.paymentMethod}\n*Server:* ${receiptData.server_name || 'System'}\n*Cashier:* ${receiptData.cashier || 'Admin'}\n-------------------------------------\nThank you for your visit!\nPowered by ${storeName}.`;
 
                       const url = `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(message)}`;

@@ -114,7 +114,21 @@ CREATE TABLE public.sales (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
 
--- 7. Enable Row Level Security (RLS) or grant API permissions
+-- 7. Create TABLES table (dine-in table/session state used by the POS billing screen)
+CREATE TABLE public.tables (
+    id TEXT PRIMARY KEY,
+    restaurant_id TEXT REFERENCES public.restaurants(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'empty' CONSTRAINT chk_table_status CHECK (status IN ('empty', 'live', 'billed')),
+    current_order JSONB NOT NULL DEFAULT '[]'::jsonb,
+    bill_total NUMERIC NOT NULL DEFAULT 0,
+    ordered_by TEXT,
+    discount NUMERIC DEFAULT 0,
+    tax NUMERIC DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
+);
+
+-- 8. Enable Row Level Security (RLS) or grant API permissions
 -- (On Free tier projects, PostgREST requires permissions to perform upserts from client)
 ALTER TABLE public.restaurants ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.inventory ENABLE ROW LEVEL SECURITY;
@@ -122,6 +136,7 @@ ALTER TABLE public.menu ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.employees ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.attendance ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.sales ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.tables ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Allow public read/write access" ON public.restaurants FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow public read/write access" ON public.inventory FOR ALL USING (true) WITH CHECK (true);
@@ -129,17 +144,21 @@ CREATE POLICY "Allow public read/write access" ON public.menu FOR ALL USING (tru
 CREATE POLICY "Allow public read/write access" ON public.employees FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow public read/write access" ON public.attendance FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow public read/write access" ON public.sales FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow public read/write access" ON public.tables FOR ALL USING (true) WITH CHECK (true);
 
--- 8. Enable Realtime Replication for instant multi-device syncing
+-- 9. Enable Realtime Replication for instant multi-device syncing
 alter publication supabase_realtime add table public.restaurants;
 alter publication supabase_realtime add table public.inventory;
 alter publication supabase_realtime add table public.menu;
 alter publication supabase_realtime add table public.employees;
 alter publication supabase_realtime add table public.attendance;
 alter publication supabase_realtime add table public.sales;
+alter publication supabase_realtime add table public.tables;
 ```
 
 4. Click **Run** in the top right. You should see a message saying "Success". Your cloud tables are now fully provisioned and ready for real-time traffic.
+
+> **Note:** The `tables` table (dine-in table/order state) was historically optional — the app has defensive handling that treats a missing `tables` endpoint as "no tables yet" rather than erroring. If your project was set up before this migration was added, just run the `CREATE TABLE public.tables (...)` block above (plus its RLS policy and realtime line) on its own to add it retroactively; nothing else needs to change.
 
 ---
 
@@ -175,8 +194,6 @@ To get a new restaurant branch or client ready to use your POS system, you need 
 
 Give the restaurant owner their unique **Restaurant ID**, along with their starting **Username** and **Password** (from Step 3).
 
-1. In PortablePOS, click **"Connect Restaurant (Cloud)"** (or use the Cloud settings tab under Settings).
-2. Input their **Restaurant ID**. (The Supabase Project URL and Anon Key are pre-configured centrally in the codebase!).
-3. Input their **Username** and **Password**.
-4. Click **Link & Login**.
-5. The terminal instantly connects to their tenant, pulls their custom restaurant name, and establishes a secure sync session!
+1. Open PortablePOS. Since this device hasn't connected to a restaurant yet, the login screen shows a **Restaurant ID** field alongside Username/Password (the Supabase Project URL and Anon Key are pre-configured centrally in the codebase, so nothing else needs to be entered).
+2. Input their **Restaurant ID**, **Username**, and **Password**, then click **Verify & Unlock**.
+3. The terminal connects directly to their tenant in Supabase, loads their menu/inventory/staff/tables straight from the cloud, and remembers the Restaurant ID on this device so future logins only ask for Username/Password (use **"Not your restaurant? Switch"** on the login screen, or **Settings → Switch Restaurant**, to unlink and connect a different one).

@@ -39,8 +39,10 @@ self.addEventListener('fetch', (e) => {
 
   const url = new URL(e.request.url);
 
-  // Skip caching sync calls or other methods
-  if (url.pathname.includes('/sync')) {
+  // Only cache same-origin requests (the static app shell). Cross-origin
+  // requests — Supabase REST/API calls in particular — must always hit the
+  // network directly and are never cached, so the app never serves stale data.
+  if (url.origin !== self.location.origin) {
     return;
   }
 
