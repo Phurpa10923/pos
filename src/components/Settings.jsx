@@ -167,7 +167,7 @@ export default function Settings({ addToast, onReloadDatabase }) {
         if (d.inventory) await db.inventory.putAll(d.inventory);
         if (d.sales) {
           for (const s of d.sales) {
-            await db.sales.add(s);
+            await db.sales.put(s);
           }
         }
         if (d.employees) {
@@ -193,6 +193,48 @@ export default function Settings({ addToast, onReloadDatabase }) {
     reader.readAsText(file);
   };
 
+  // Purge Sales History only
+  const handlePurgeSales = async () => {
+    if (confirm('Are you sure you want to delete all historical transactions/bills from this device? (This will not delete catalog items or staff details).')) {
+      try {
+        await db.sales.clear();
+        addToast('Sales transactions cleared successfully', 'info');
+        loadStatsAndSettings();
+        if (onReloadDatabase) onReloadDatabase();
+      } catch (err) {
+        addToast(`Purge failed: ${err.message}`, 'error');
+      }
+    }
+  };
+
+  // Purge Menu Catalog only
+  const handlePurgeMenu = async () => {
+    if (confirm('Are you sure you want to erase your Menu Catalog from this device?')) {
+      try {
+        await db.menu.clear();
+        addToast('Menu catalog cleared successfully', 'info');
+        loadStatsAndSettings();
+        if (onReloadDatabase) onReloadDatabase();
+      } catch (err) {
+        addToast(`Purge failed: ${err.message}`, 'error');
+      }
+    }
+  };
+
+  // Purge Inventory Stock only
+  const handlePurgeInventory = async () => {
+    if (confirm('Are you sure you want to wipe all wholesale inventory records from this device?')) {
+      try {
+        await db.inventory.clear();
+        addToast('Inventory stocks cleared successfully', 'info');
+        loadStatsAndSettings();
+        if (onReloadDatabase) onReloadDatabase();
+      } catch (err) {
+        addToast(`Purge failed: ${err.message}`, 'error');
+      }
+    }
+  };
+
   // Full purge
   const handlePurgeDatabase = async () => {
     if (confirm('CRITICAL WARNING: This will completely erase all transactions, employee rosters, menu catalogs, and inventory stocks from this device. Do you want to proceed?')) {
@@ -211,7 +253,8 @@ export default function Settings({ addToast, onReloadDatabase }) {
           currentOrder: [],
           billTotal: 0,
           discount: 0,
-          tax: 0
+          tax: 0,
+          orderedBy: null
         }));
         await db.tables.putAll(defaultTables);
 
@@ -220,7 +263,7 @@ export default function Settings({ addToast, onReloadDatabase }) {
         loadStatsAndSettings();
         if (onReloadDatabase) onReloadDatabase();
       } catch (err) {
-        addToast('Purge failed', 'error');
+        addToast(`Purge failed: ${err.message}`, 'error');
       }
     }
   };
@@ -255,104 +298,102 @@ export default function Settings({ addToast, onReloadDatabase }) {
         </div>
 
         {/* Cloud Synchronization Settings */}
-        <div className="glass-panel" style={{ padding: '24px' }}>
-          <h2 className="section-title" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
-            <Cloud size={22} className="text-teal" /> Cloud Database Connection
-          </h2>
-          
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: 'rgba(255,255,255,0.02)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}>
-              <div>
-                <div style={{ fontWeight: '600', fontSize: '14px' }}>Enable Cloud Sync</div>
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Sync data bi-directionally across multiple devices</div>
-              </div>
-              <label className="switch">
-                <input 
-                  type="checkbox" 
-                  checked={syncEnabled} 
-                  onChange={(e) => {
-                    setSyncEnabled(e.target.checked);
-                    if (!e.target.checked) {
-                      handleDeleteConnection();
-                    }
-                  }} 
-                />
-                <span className="slider round"></span>
-              </label>
-            </div>
-
-            {syncEnabled && (
-              <>
-                {(!SUPABASE_URL || !SUPABASE_ANON_KEY) && (
-                  <>
-                    <div className="form-group">
-                      <label>Supabase Project URL *</label>
-                      <input 
-                        type="url" 
-                        className="input-field" 
-                        placeholder="https://your-project.supabase.co" 
-                        value={syncUrl}
-                        onChange={(e) => setSyncUrl(e.target.value)}
-                      />
-                      <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Found under Settings &gt; API in your Supabase Dashboard</span>
-                    </div>
-
-                    <div className="form-group">
-                      <label>Supabase Anon Key *</label>
-                      <input 
-                        type="password" 
-                        className="input-field" 
-                        placeholder="your-anon-key-jwt" 
-                        value={syncPassword}
-                        onChange={(e) => setSyncPassword(e.target.value)}
-                      />
-                      <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Found under Settings &gt; API &gt; Project API keys in Supabase</span>
-                    </div>
-                  </>
-                )}
-
-                <div className="form-group">
-                  <label>Restaurant / Store ID (Tenant ID) *</label>
+        {(!SUPABASE_URL || !SUPABASE_ANON_KEY) && (
+          <div className="glass-panel" style={{ padding: '24px' }}>
+            <h2 className="section-title" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+              <Cloud size={22} className="text-teal" /> Cloud Database Connection
+            </h2>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: 'rgba(255,255,255,0.02)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}>
+                <div>
+                  <div style={{ fontWeight: '600', fontSize: '14px' }}>Enable Cloud Sync</div>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Sync data bi-directionally across multiple devices</div>
+                </div>
+                <label className="switch">
                   <input 
-                    type="text" 
-                    className="input-field" 
-                    placeholder="e.g. delicious_pizza_1" 
-                    value={restaurantId}
-                    onChange={(e) => setRestaurantId(e.target.value)}
+                    type="checkbox" 
+                    checked={syncEnabled} 
+                    onChange={(e) => {
+                      setSyncEnabled(e.target.checked);
+                      if (!e.target.checked) {
+                        handleDeleteConnection();
+                      }
+                    }} 
                   />
-                  <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Ensure all terminals in your restaurant share the exact same ID.</span>
-                </div>
+                  <span className="slider round"></span>
+                </label>
+              </div>
 
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: 'var(--text-secondary)', padding: '8px 0' }}>
-                  <span>Unsynced Local Changes:</span>
-                  <span style={{ fontWeight: 'bold', color: unsyncedCount > 0 ? 'var(--accent-amber)' : 'var(--accent-emerald)' }}>
-                    {unsyncedCount} records
-                  </span>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                  <button className="btn btn-primary" onClick={handleSaveSettings} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
-                    Save Connection
-                  </button>
-                  <button 
-                    className="btn btn-secondary" 
-                    onClick={handleSyncNow} 
-                    disabled={isSyncing}
-                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
-                  >
-                    {isSyncing ? 'Syncing...' : 'Sync Now'}
-                  </button>
-                </div>
-                
-                {syncStatus && (
-                  <div style={{ fontSize: '12px', textAlign: 'center', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                    Status: <strong>{syncStatus}</strong>
+              {syncEnabled && (
+                <>
+                  <div className="form-group">
+                    <label>Supabase Project URL *</label>
+                    <input 
+                      type="url" 
+                      className="input-field" 
+                      placeholder="https://your-project.supabase.co" 
+                      value={syncUrl}
+                      onChange={(e) => setSyncUrl(e.target.value)}
+                    />
+                    <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Found under Settings &gt; API in your Supabase Dashboard</span>
                   </div>
-                )}
-              </>
-            )}
+
+                  <div className="form-group">
+                    <label>Supabase Anon Key *</label>
+                    <input 
+                      type="password" 
+                      className="input-field" 
+                      placeholder="your-anon-key-jwt" 
+                      value={syncPassword}
+                      onChange={(e) => setSyncPassword(e.target.value)}
+                    />
+                    <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Found under Settings &gt; API &gt; Project API keys in Supabase</span>
+                  </div>
+
+                  <div className="form-group">
+                    <label>Restaurant / Store ID (Tenant ID) *</label>
+                    <input 
+                      type="text" 
+                      className="input-field" 
+                      placeholder="e.g. delicious_pizza_1" 
+                      value={restaurantId}
+                      onChange={(e) => setRestaurantId(e.target.value)}
+                    />
+                    <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Ensure all terminals in your restaurant share the exact same ID.</span>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: 'var(--text-secondary)', padding: '8px 0' }}>
+                    <span>Unsynced Local Changes:</span>
+                    <span style={{ fontWeight: 'bold', color: unsyncedCount > 0 ? 'var(--accent-amber)' : 'var(--accent-emerald)' }}>
+                      {unsyncedCount} records
+                    </span>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                    <button className="btn btn-primary" onClick={handleSaveSettings} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                      Save Connection
+                    </button>
+                    <button 
+                      className="btn btn-secondary" 
+                      onClick={handleSyncNow} 
+                      disabled={isSyncing}
+                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+                    >
+                      {isSyncing ? 'Syncing...' : 'Sync Now'}
+                    </button>
+                  </div>
+                  
+                  {syncStatus && (
+                    <div style={{ fontSize: '12px', textAlign: 'center', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                      Status: <strong>{syncStatus}</strong>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Local DB Info Card */}
         <div className="glass-panel" style={{ padding: '24px' }}>
@@ -380,6 +421,18 @@ export default function Settings({ addToast, onReloadDatabase }) {
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {syncEnabled && (
+              <button 
+                className="btn btn-secondary btn-full" 
+                onClick={handleSyncNow} 
+                disabled={isSyncing}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', background: 'rgba(20, 184, 166, 0.1)', border: '1px solid rgba(20, 184, 166, 0.2)', color: 'var(--accent-teal)' }}
+              >
+                <RefreshCw size={16} className={isSyncing ? "animate-spin" : ""} />
+                {isSyncing ? 'Syncing...' : 'Sync Local Changes to Cloud'}
+              </button>
+            )}
+
             <button className="btn btn-secondary btn-full" onClick={handleExportBackup} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
               <Download size={16} /> Export Local Database Backup (.json)
             </button>
@@ -389,9 +442,21 @@ export default function Settings({ addToast, onReloadDatabase }) {
               <input type="file" accept=".json" onChange={handleImportBackup} style={{ display: 'none' }} />
             </label>
 
-            <button className="btn btn-danger btn-full" onClick={handlePurgeDatabase} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', marginTop: '8px' }}>
-              <Trash2 size={16} /> WIPE LOCAL DATABASE
-            </button>
+            <div style={{ borderTop: '1px solid var(--border-color)', marginTop: '14px', paddingTop: '14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div style={{ fontSize: '11px', fontWeight: 'bold', color: 'var(--accent-coral)', textTransform: 'uppercase', marginBottom: '4px', letterSpacing: '0.05em' }}>Erase Local Data Registers</div>
+              <button className="btn btn-danger btn-full" onClick={handlePurgeSales} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.15)' }}>
+                <Trash2 size={16} /> Clear Sales History Only (Transactions)
+              </button>
+              <button className="btn btn-danger btn-full" onClick={handlePurgeMenu} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.15)' }}>
+                <Trash2 size={16} /> Clear Menu Catalog Items Only
+              </button>
+              <button className="btn btn-danger btn-full" onClick={handlePurgeInventory} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.15)' }}>
+                <Trash2 size={16} /> Clear Wholesale Stock Items Only
+              </button>
+              <button className="btn btn-danger btn-full" onClick={handlePurgeDatabase} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                <Trash2 size={16} /> Full Wipe Local Database (Reset All)
+              </button>
+            </div>
           </div>
         </div>
 
