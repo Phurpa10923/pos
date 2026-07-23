@@ -1,14 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import { dbFetchSalesByRange } from '../cloudDb';
-import { Calendar, Download, RefreshCw, BarChart2, TrendingUp, PieChart, IndianRupee } from 'lucide-react';
+import { getTaxDetails } from '../taxUtils';
+import { Calendar, Download, RefreshCw, BarChart2, TrendingUp, PieChart, IndianRupee, Pencil, Plus, Minus, Trash2 } from 'lucide-react';
 
 export default function Reports({
   sales = [],
-  menu = [],
+  products = [],
   inventory = [],
   attendance = [],
   addToast,
   onSeedSales,
+  onEditSale,
   restaurantName = ''
 }) {
   const [reportType, setReportType] = useState('daily'); // 'daily' or 'monthly'
@@ -19,6 +21,15 @@ export default function Reports({
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [receiptData, setReceiptData] = useState(null);
   const [whatsappNumber, setWhatsappNumber] = useState('');
+
+  // Bill editing state (correcting a saved sale's items after the fact)
+  const [isEditingBill, setIsEditingBill] = useState(false);
+  const [editItems, setEditItems] = useState([]);
+  const [editDiscount, setEditDiscount] = useState(0);
+  const [editTaxType, setEditTaxType] = useState('GST_5');
+  const [addItemProductId, setAddItemProductId] = useState('');
+  const [settleBalanceNow, setSettleBalanceNow] = useState(false);
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
 
   // Fetch report data on demand directly from Supabase for the selected range
   useEffect(() => {
@@ -211,7 +222,7 @@ export default function Reports({
   // Calculate Profit (Sale price - Cost price of raw materials)
   const totalProfit = currentPeriodSales.reduce((sum, sale) => {
     const saleProfit = sale.items.reduce((itemSum, item) => {
-      const menuItem = menu.find(m => m.id === item.productId);
+      const menuItem = products.find(m => m.id === item.productId);
       let cost = 0;
       
       if (menuItem && menuItem.inventoryId) {
@@ -251,7 +262,7 @@ export default function Reports({
   const itemizedSales = currentPeriodSales.reduce((acc, sale) => {
     sale.items.forEach(item => {
       const existing = acc[item.productId];
-      const menuItem = menu.find(m => m.id === item.productId);
+      const menuItem = products.find(m => m.id === item.productId);
       
       let costPerUnit = 0;
       if (menuItem && menuItem.inventoryId) {
@@ -294,7 +305,7 @@ export default function Reports({
     const now = new Date();
     
     // Seed sample menu catalog if empty
-    if (menu.length === 0) {
+    if (products.length === 0) {
       addToast('Please seed or add menu items first', 'warning');
       return;
     }
@@ -321,7 +332,7 @@ export default function Reports({
         let subtotal = 0;
 
         for (let i = 0; i < itemCount; i++) {
-          const randomProd = menu[Math.floor(Math.random() * menu.length)];
+          const randomProd = products[Math.floor(Math.random() * products.length)];
           const qty = 1 + Math.floor(Math.random() * 2);
           
           if (!selectedItems.some(x => x.productId === randomProd.id)) {
@@ -658,9 +669,89 @@ export default function Reports({
   }).join(' ');
 
   // Area points (for gradient under line)
-  const areaPoints = chartData.length > 0 
+  const areaPoints = chartData.length > 0
     ? `${paddingX},${height - paddingY} ${points} ${width - paddingX},${height - paddingY}`
     : '';
+
+  // --- Bill editing (correcting a saved sale) ---
+  const handleStartEditBill = () => {
+    setEditItems(receiptData.items.map(item => ({ ...item })));
+    setEditDiscount(receiptData.discount || 0);
+    setEditTaxType(receiptData.taxType || 'GST_5');
+    setAddItemProductId('');
+    setSettleBalanceNow(false);
+    setIsEditingBill(true);
+  };
+
+  const handleCancelEditBill = () => {
+    setIsEditingBill(false);
+  };
+
+  const handleEditItemQtyChange = (productId, delta) => {
+    setEditItems(prev => prev
+      .map(item => item.productId === productId ? { ...item, quantity: item.quantity + delta } : item)
+      .filter(item => item.quantity > 0)
+    );
+  };
+
+  const handleRemoveEditItem = (productId) => {
+    setEditItems(prev => prev.filter(item => item.productId !== productId));
+  };
+
+  const handleAddEditItem = () => {
+    if (!addItemProductId) return;
+    const product = products.find(p => p.id === addItemProductId);
+    if (!product) return;
+
+    setEditItems(prev => {
+      const existing = prev.find(item => item.productId === product.id);
+      if (existing) {
+        return prev.map(item => item.productId === product.id ? { ...item, quantity: item.quantity + 1 } : item);
+      }
+      return [...prev, { productId: product.id, name: product.name, price: product.price, quantity: 1 }];
+    });
+    setAddItemProductId('');
+  };
+
+  const editSubtotal = editItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const editDiscountAmount = (editSubtotal * editDiscount) / 100;
+  const editTaxableAmount = editSubtotal - editDiscountAmount;
+  const editTaxDetails = getTaxDetails(editTaxType, editTaxableAmount);
+  const editTaxAmount = (editTaxableAmount * editTaxDetails.rate) / 100;
+  const editTotal = editTaxableAmount + editTaxAmount;
+
+  const originalAmountPaid = receiptData ? (receiptData.amountPaid ?? receiptData.total) : 0;
+  const currentBalanceDue = receiptData ? (receiptData.total - originalAmountPaid) : 0;
+  const editBalanceDue = editTotal - originalAmountPaid;
+
+  const handleSaveEditedBill = async () => {
+    if (editItems.length === 0) {
+      addToast('A bill must have at least one item', 'warning');
+      return;
+    }
+    setIsSavingEdit(true);
+    try {
+      const updatedSale = {
+        ...receiptData,
+        items: editItems,
+        subtotal: editSubtotal,
+        discount: editDiscount,
+        taxType: editTaxType,
+        taxRate: editTaxDetails.rate,
+        taxAmount: editTaxAmount,
+        taxBreakdown: editTaxDetails.breakdown,
+        total: editTotal,
+        amountPaid: settleBalanceNow ? editTotal : originalAmountPaid
+      };
+      const success = await onEditSale(receiptData, updatedSale);
+      if (success) {
+        setReceiptData(updatedSale);
+        setIsEditingBill(false);
+      }
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -891,10 +982,13 @@ export default function Reports({
                     <th>Method</th>
                     <th>Cashier</th>
                     <th style={{ textAlign: 'right' }}>Total (₹)</th>
+                    <th style={{ textAlign: 'right' }}>Balance</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {currentPeriodSales.slice().reverse().map(sale => (
+                  {currentPeriodSales.slice().reverse().map(sale => {
+                    const balance = sale.total - (sale.amountPaid ?? sale.total);
+                    return (
                     <tr key={sale.id} onClick={() => { setReceiptData(sale); setShowReceiptModal(true); }} style={{ cursor: 'pointer' }} title="Click to view full receipt">
                       <td style={{ fontWeight: '500' }}>{sale.id}</td>
                       <td>{sale.tableName}</td>
@@ -909,8 +1003,18 @@ export default function Reports({
                         </span>
                       </td>
                       <td style={{ textAlign: 'right', fontWeight: '600' }}>₹{sale.total.toFixed(2)}</td>
+                      <td style={{ textAlign: 'right' }}>
+                        {Math.abs(balance) < 0.01 ? (
+                          <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>Settled</span>
+                        ) : (
+                          <span className={`badge ${balance > 0 ? 'badge-coral' : 'badge-amber'}`}>
+                            {balance > 0 ? `Owes ₹${balance.toFixed(2)}` : `Refund ₹${(-balance).toFixed(2)}`}
+                          </span>
+                        )}
+                      </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -967,9 +1071,130 @@ export default function Reports({
         <div className="overlay">
           <div className="glass-panel modal-content" style={{ maxWidth: '400px', background: 'var(--bg-secondary)', zIndex: 10001 }}>
             <div className="modal-header">
-              <h2>Receipt Details</h2>
-              <button className="close-btn" onClick={() => setShowReceiptModal(false)}>×</button>
+              <h2>{isEditingBill ? 'Edit Bill' : 'Receipt Details'}</h2>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {!isEditingBill && (
+                  <button className="btn btn-secondary" onClick={handleStartEditBill} style={{ padding: '6px 12px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px' }}>
+                    <Pencil size={14} /> Edit Bill
+                  </button>
+                )}
+                <button className="close-btn" onClick={() => setShowReceiptModal(false)}>×</button>
+              </div>
             </div>
+            {isEditingBill ? (
+            <div className="modal-body" style={{ maxHeight: '60vh', overflowY: 'auto' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                <div>
+                  <label style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'block', marginBottom: '8px' }}>BILL ITEMS</label>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {editItems.map(item => (
+                      <div key={item.productId} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 10px', background: 'rgba(255,255,255,0.02)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}>
+                        <span style={{ flex: 1, fontSize: '13px' }}>{item.name}</span>
+                        <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>₹{item.price}</span>
+                        <button type="button" className="btn btn-secondary" style={{ padding: '4px 8px' }} onClick={() => handleEditItemQtyChange(item.productId, -1)}>
+                          <Minus size={12} />
+                        </button>
+                        <span style={{ minWidth: '20px', textAlign: 'center', fontWeight: '600' }}>{item.quantity}</span>
+                        <button type="button" className="btn btn-secondary" style={{ padding: '4px 8px' }} onClick={() => handleEditItemQtyChange(item.productId, 1)}>
+                          <Plus size={12} />
+                        </button>
+                        <span style={{ minWidth: '64px', textAlign: 'right', fontWeight: '600', fontSize: '13px' }}>₹{(item.price * item.quantity).toFixed(2)}</span>
+                        <button type="button" className="btn btn-danger" style={{ padding: '4px 8px' }} onClick={() => handleRemoveEditItem(item.productId)}>
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                    ))}
+                    {editItems.length === 0 && (
+                      <p style={{ fontSize: '12px', color: 'var(--text-muted)', textAlign: 'center', padding: '10px 0' }}>No items — add one below.</p>
+                    )}
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <select
+                    className="input-field"
+                    value={addItemProductId}
+                    onChange={(e) => setAddItemProductId(e.target.value)}
+                    style={{ flex: 1 }}
+                  >
+                    <option value="">+ Select item to add...</option>
+                    {products.map(p => (
+                      <option key={p.id} value={p.id}>{p.name} — ₹{p.price}</option>
+                    ))}
+                  </select>
+                  <button type="button" className="btn btn-secondary" onClick={handleAddEditItem}>Add</button>
+                </div>
+
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
+                    <label>Discount (%)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      className="input-field"
+                      value={editDiscount}
+                      onChange={(e) => setEditDiscount(Math.max(0, Math.min(100, Number(e.target.value))))}
+                    />
+                  </div>
+                  <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
+                    <label>Tax Type</label>
+                    <select className="input-field" value={editTaxType} onChange={(e) => setEditTaxType(e.target.value)}>
+                      <option value="NONE">No Tax</option>
+                      <option value="GST_5">GST 5%</option>
+                      <option value="GST_12">GST 12%</option>
+                      <option value="GST_18">GST 18%</option>
+                      <option value="VAT_10">VAT 10%</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="receipt-totals">
+                  <div className="receipt-total-row">
+                    <span>Subtotal:</span>
+                    <span>₹{editSubtotal.toFixed(2)}</span>
+                  </div>
+                  {editDiscount > 0 && (
+                    <div className="receipt-total-row">
+                      <span>Discount ({editDiscount}%):</span>
+                      <span>-₹{editDiscountAmount.toFixed(2)}</span>
+                    </div>
+                  )}
+                  {editTaxDetails.rate > 0 && (
+                    <div className="receipt-total-row">
+                      <span>{editTaxDetails.label}:</span>
+                      <span>₹{editTaxAmount.toFixed(2)}</span>
+                    </div>
+                  )}
+                  <div className="receipt-total-row grand">
+                    <span>New Total:</span>
+                    <span>₹{editTotal.toFixed(2)}</span>
+                  </div>
+                </div>
+
+                <div style={{ padding: '12px 14px', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>Amount Already Paid:</span>
+                    <span style={{ fontWeight: '600' }}>₹{originalAmountPaid.toFixed(2)}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>
+                      {editBalanceDue > 0.01 ? 'To Be Paid (Owed by Customer):' : editBalanceDue < -0.01 ? 'Refund Owed to Customer:' : 'Balance:'}
+                    </span>
+                    <span style={{ fontWeight: '700', color: editBalanceDue > 0.01 ? 'var(--accent-coral)' : editBalanceDue < -0.01 ? 'var(--accent-amber)' : 'var(--accent-emerald)' }}>
+                      ₹{Math.abs(editBalanceDue).toFixed(2)}
+                    </span>
+                  </div>
+                  {Math.abs(editBalanceDue) > 0.01 && (
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                      <input type="checkbox" checked={settleBalanceNow} onChange={(e) => setSettleBalanceNow(e.target.checked)} />
+                      Mark this balance as settled now
+                    </label>
+                  )}
+                </div>
+              </div>
+            </div>
+            ) : (
             <div className="modal-body" style={{ maxHeight: '60vh', overflowY: 'auto' }}>
               <div className="receipt-preview">
                 <div className="receipt-header">
@@ -1021,6 +1246,17 @@ export default function Reports({
                     <span>₹{receiptData.total.toFixed(2)}</span>
                   </div>
                 </div>
+
+                {Math.abs(currentBalanceDue) > 0.01 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', fontSize: '13px' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>
+                      {currentBalanceDue > 0 ? 'Owed by Customer:' : 'Refund Owed to Customer:'}
+                    </span>
+                    <span style={{ fontWeight: '700', color: currentBalanceDue > 0 ? 'var(--accent-coral)' : 'var(--accent-amber)' }}>
+                      ₹{Math.abs(currentBalanceDue).toFixed(2)}
+                    </span>
+                  </div>
+                )}
 
                 <div className="receipt-footer">
                   <p>Thank You For Your Visit!</p>
@@ -1075,23 +1311,37 @@ export default function Reports({
               </div>
 
             </div>
+            )}
             <div className="modal-footer" style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', width: '100%' }}>
-                <button className="btn btn-secondary" onClick={() => handleDownloadReceiptImage()}>
-                  💾 Save Bill Image
-                </button>
-                {navigator.share && (
-                  <button className="btn btn-secondary" onClick={() => handleShareReceiptImage()}>
-                    📤 Share Bill Image
+              {isEditingBill ? (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', width: '100%' }}>
+                  <button className="btn btn-secondary" onClick={handleCancelEditBill} disabled={isSavingEdit}>
+                    Cancel
                   </button>
-                )}
-                <button className="btn btn-secondary" onClick={() => window.print()} style={{ gridColumn: navigator.share ? 'span 2' : 'span 1' }}>
-                  🖨️ Print Receipt
-                </button>
-              </div>
-              <button className="btn btn-primary btn-full" onClick={() => { setShowReceiptModal(false); setWhatsappNumber(''); }}>
-                Done
-              </button>
+                  <button className="btn btn-primary" onClick={handleSaveEditedBill} disabled={isSavingEdit}>
+                    {isSavingEdit ? 'Saving…' : 'Save Changes'}
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', width: '100%' }}>
+                    <button className="btn btn-secondary" onClick={() => handleDownloadReceiptImage()}>
+                      💾 Save Bill Image
+                    </button>
+                    {navigator.share && (
+                      <button className="btn btn-secondary" onClick={() => handleShareReceiptImage()}>
+                        📤 Share Bill Image
+                      </button>
+                    )}
+                    <button className="btn btn-secondary" onClick={() => window.print()} style={{ gridColumn: navigator.share ? 'span 2' : 'span 1' }}>
+                      🖨️ Print Receipt
+                    </button>
+                  </div>
+                  <button className="btn btn-primary btn-full" onClick={() => { setShowReceiptModal(false); setWhatsappNumber(''); setIsEditingBill(false); }}>
+                    Done
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>

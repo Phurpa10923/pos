@@ -532,6 +532,58 @@ export default function App() {
     }
   };
 
+  // Corrects a saved bill's items and reconciles the linked inventory stock
+  // for the difference between the original and edited quantities.
+  const handleEditSale = async (originalSale, updatedSale) => {
+    const previous = sales;
+    setSales(prev => prev.map(s => (s.id === updatedSale.id ? updatedSale : s)));
+    setSavingCount(c => c + 1);
+    try {
+      await dbUpsert('sales', updatedSale);
+
+      const qtyDeltaByProduct = new Map();
+      originalSale.items.forEach(item => {
+        qtyDeltaByProduct.set(item.productId, (qtyDeltaByProduct.get(item.productId) || 0) - item.quantity);
+      });
+      updatedSale.items.forEach(item => {
+        qtyDeltaByProduct.set(item.productId, (qtyDeltaByProduct.get(item.productId) || 0) + item.quantity);
+      });
+
+      let hasInventoryChanges = false;
+      const updatedInventory = inventory.map(invItem => {
+        let totalDelta = 0;
+        qtyDeltaByProduct.forEach((deltaQty, productId) => {
+          if (deltaQty === 0) return;
+          const menuItem = menu.find(m => m.id === productId);
+          if (menuItem && menuItem.inventoryId === invItem.id) {
+            totalDelta += deltaQty * (menuItem.inventoryQty || 1);
+          }
+        });
+        if (totalDelta !== 0) {
+          hasInventoryChanges = true;
+          return {
+            ...invItem,
+            stock: Math.max(0, Number((Number(invItem.stock) - totalDelta).toFixed(3)))
+          };
+        }
+        return invItem;
+      });
+
+      if (hasInventoryChanges) {
+        await handleUpdateInventory(updatedInventory);
+      }
+
+      addToast('Bill updated successfully');
+      return true;
+    } catch (err) {
+      setSales(previous);
+      addToast(`Failed to update bill: ${err.message}`, 'error');
+      return false;
+    } finally {
+      setSavingCount(c => c - 1);
+    }
+  };
+
   const handleUpdateEmployees = async (updatedEmployees) => {
     const previous = employees;
     setEmployees(updatedEmployees);
@@ -884,6 +936,7 @@ export default function App() {
               attendance={attendance}
               addToast={addToast}
               onSeedSales={handleSeedSales}
+              onEditSale={handleEditSale}
               restaurantName={restaurantName}
             />
           )}

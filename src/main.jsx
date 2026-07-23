@@ -9,12 +9,17 @@ createRoot(document.getElementById('root')).render(
   </StrictMode>,
 )
 
-// PWA Service Worker registration
+// The app is now fully online-only (all data lives directly in Supabase, no local
+// cache) so the offline app-shell service worker this used to register is no
+// longer needed — and its caching was silently serving stale data after saves.
+// Unregister any previously-installed worker and clear its caches so devices
+// that already have it installed stop being affected.
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js')
-      .then(reg => console.log('Service worker registered successfully:', reg))
-      .catch(err => console.error('Service worker registration failed:', err));
+  navigator.serviceWorker.getRegistrations().then(registrations => {
+    registrations.forEach(reg => reg.unregister());
   });
+}
+if ('caches' in window) {
+  caches.keys().then(keys => keys.forEach(key => caches.delete(key)));
 }
 

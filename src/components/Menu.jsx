@@ -31,7 +31,7 @@ export default function Menu({
     setName('');
     setCategory('Beverages');
     setPrice('');
-    setInventoryId(inventory[0]?.id || '');
+    setInventoryId('');
     setInventoryQty('1');
     setShowAddModal(true);
   };
@@ -206,12 +206,14 @@ export default function Menu({
                   </th>
                   <th>Item Name</th>
                   <th>Category</th>
+                  <th>Linked Inventory</th>
                   <th>Customer Price</th>
                   <th style={{ textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredMenu.map(item => {
+                  const linkedInv = item.inventoryId ? inventory.find(inv => inv.id === item.inventoryId) : null;
                   return (
                     <tr key={item.id} style={{ background: selectedIds.includes(item.id) ? 'rgba(239, 68, 68, 0.05)' : '' }}>
                       <td>
@@ -229,6 +231,17 @@ export default function Menu({
                       </td>
                       <td style={{ fontWeight: '600' }}>{item.name}</td>
                       <td><span className="badge badge-muted">{item.category}</span></td>
+                      <td>
+                        {!item.inventoryId ? (
+                          <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>Not linked</span>
+                        ) : linkedInv ? (
+                          <span className="badge badge-indigo" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                            <Link2 size={11} /> {linkedInv.name} ({item.inventoryQty} {linkedInv.unit}/sale)
+                          </span>
+                        ) : (
+                          <span className="badge badge-coral">Linked item missing</span>
+                        )}
+                      </td>
                       <td style={{ fontWeight: '700', color: 'var(--accent-teal)' }}>₹{item.price.toFixed(2)}</td>
                       <td style={{ textAlign: 'right' }}>
                         <div style={{ display: 'inline-flex', gap: '8px' }}>
@@ -307,6 +320,42 @@ export default function Menu({
                     />
                   </div>
                 </div>
+
+                <div className="form-group">
+                  <label>Link to Inventory Item (optional)</label>
+                  <select
+                    className="input-field select-field"
+                    value={inventoryId}
+                    onChange={(e) => setInventoryId(e.target.value)}
+                  >
+                    <option value="">No link (unlimited / untracked stock)</option>
+                    {inventory.map(inv => (
+                      <option key={inv.id} value={inv.id}>{inv.name} — {inv.stock} {inv.unit} in stock</option>
+                    ))}
+                  </select>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px', display: 'block' }}>
+                    Linking makes this menu item automatically deduct wholesale stock on every sale, and it'll show as "Out of Stock" on the POS screen once supply runs out.
+                  </span>
+                </div>
+
+                {inventoryId && (
+                  <div className="form-group">
+                    <label>Consumed Per Sale *</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      required
+                      className="input-field"
+                      placeholder="e.g. 1 (one can) or 0.25 (250ml from a 1L stock unit)"
+                      value={inventoryQty}
+                      onChange={(e) => setInventoryQty(e.target.value)}
+                    />
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px', display: 'block' }}>
+                      How much of "{inventory.find(inv => inv.id === inventoryId)?.name}" is used each sale, in the same unit as its stock ({inventory.find(inv => inv.id === inventoryId)?.unit}).
+                    </span>
+                  </div>
+                )}
               </div>
               <div className="modal-footer">
                 <button type="button" className="btn btn-secondary" onClick={() => setShowAddModal(false)}>Cancel</button>

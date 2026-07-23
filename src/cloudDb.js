@@ -59,6 +59,7 @@ function toSnakeCase(item, tableName) {
     if ('billTotal' in converted) { converted.bill_total = Number(converted.billTotal); delete converted.billTotal; }
     if ('subtotal' in converted) { converted.subtotal = Number(converted.subtotal); }
     if ('discount' in converted) { converted.discount = Number(converted.discount); }
+    if ('amountPaid' in converted) { converted.amount_paid = Number(converted.amountPaid); delete converted.amountPaid; }
   }
 
   if (tableName === 'attendance') {
@@ -76,6 +77,7 @@ function toSnakeCase(item, tableName) {
     if ('orderedBy' in converted) { converted.ordered_by = converted.orderedBy; delete converted.orderedBy; }
     if ('discount' in converted) { converted.discount = Number(converted.discount); }
     if ('tax' in converted) { converted.tax = Number(converted.tax); }
+    if ('taxType' in converted) { converted.tax_type = converted.taxType; delete converted.taxType; }
   }
 
   return converted;
@@ -109,6 +111,7 @@ function toCamelCase(item, tableName) {
     if ('bill_total' in converted) { converted.billTotal = Number(converted.bill_total); delete converted.bill_total; }
     if ('subtotal' in converted) { converted.subtotal = Number(converted.subtotal); }
     if ('discount' in converted) { converted.discount = Number(converted.discount); }
+    if ('amount_paid' in converted) { converted.amountPaid = Number(converted.amount_paid); delete converted.amount_paid; }
   }
 
   if (tableName === 'attendance') {
@@ -126,6 +129,7 @@ function toCamelCase(item, tableName) {
     if ('ordered_by' in converted) { converted.orderedBy = converted.ordered_by; delete converted.ordered_by; }
     if ('discount' in converted) { converted.discount = Number(converted.discount); }
     if ('tax' in converted) { converted.tax = Number(converted.tax); }
+    if ('tax_type' in converted) { converted.taxType = converted.tax_type; delete converted.tax_type; }
   }
 
   return converted;

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Search, ShoppingBag, Plus, Minus, Receipt, Check, Trash2, ArrowLeft, PlusCircle } from 'lucide-react';
+import { getTaxDetails } from '../taxUtils';
 
 export default function TablePOS({
   tables = [],
@@ -217,33 +218,6 @@ export default function TablePOS({
     }
   };
 
-  // Tax profile details builder
-  const getTaxDetails = (type, taxable) => {
-    switch(type) {
-      case 'GST_5':
-        return { label: 'GST 5% (2.5% CGST + 2.5% SGST)', rate: 5, breakdown: [
-          { label: 'CGST (2.5%)', amount: (taxable * 2.5) / 100 },
-          { label: 'SGST (2.5%)', amount: (taxable * 2.5) / 100 }
-        ]};
-      case 'GST_12':
-        return { label: 'GST 12% (6% CGST + 6% SGST)', rate: 12, breakdown: [
-          { label: 'CGST (6.0%)', amount: (taxable * 6.0) / 100 },
-          { label: 'SGST (6.0%)', amount: (taxable * 6.0) / 100 }
-        ]};
-      case 'GST_18':
-        return { label: 'GST 18% (9% CGST + 9% SGST)', rate: 18, breakdown: [
-          { label: 'CGST (9.0%)', amount: (taxable * 9.0) / 100 },
-          { label: 'SGST (9.0%)', amount: (taxable * 9.0) / 100 }
-        ]};
-      case 'VAT_10':
-        return { label: 'VAT 10%', rate: 10, breakdown: [
-          { label: 'VAT (10%)', amount: (taxable * 10) / 100 }
-        ]};
-      default:
-        return { label: 'No Tax', rate: 0, breakdown: [] };
-    }
-  };
-
   // Calculations for active order totals
   const subtotal = activeTable?.currentOrder.reduce((sum, i) => sum + (i.price * i.quantity), 0) || 0;
   const discountAmount = (subtotal * discountPercent) / 100;
@@ -319,6 +293,7 @@ export default function TablePOS({
       taxAmount: taxAmount,
       taxBreakdown: taxDetails.breakdown,
       total: finalTotal,
+      amountPaid: finalTotal,
       paymentMethod: finalPaymentMethod,
       cashier: currentUser ? currentUser.name : 'Admin',
       server_name: activeTable.orderedBy || (currentUser ? currentUser.name : 'System'),
@@ -601,6 +576,19 @@ export default function TablePOS({
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Desktop/laptop order header — mobile-order-header above is mobile-only (CSS-hidden past 900px) */}
+      {mobileTab === 'order' && activeTable && (
+        <div className="desktop-order-header">
+          <button className="btn btn-secondary" onClick={() => setMobileTab('tables')} style={{ padding: '6px 12px' }}>
+            <ArrowLeft size={16} /> Back to Tables
+          </button>
+          <h3 style={{ fontFamily: 'var(--font-display)', margin: 0 }}>{activeTable.name}</h3>
+          <span className={`badge ${activeTable.status === 'billed' ? 'badge-coral' : activeTable.status === 'live' ? 'badge-indigo' : 'badge-muted'}`}>
+            {activeTable.status}
+          </span>
         </div>
       )}
 

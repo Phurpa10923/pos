@@ -1344,7 +1344,18 @@ body {
   display: none;
 }
 
+.desktop-order-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  grid-column: 1 / -1;
+}
+
 @media (max-width: 900px) {
+  .desktop-order-header {
+    display: none;
+  }
+
   .mobile-order-header {
     display: flex;
     flex-direction: column;

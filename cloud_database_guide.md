@@ -106,6 +106,7 @@ CREATE TABLE public.sales (
     tax_amount NUMERIC,
     tax_breakdown JSONB,
     total NUMERIC NOT NULL DEFAULT 0,
+    amount_paid NUMERIC DEFAULT 0,
     payment_method TEXT NOT NULL,
     cashier TEXT,
     server_name TEXT,
@@ -125,6 +126,7 @@ CREATE TABLE public.tables (
     ordered_by TEXT,
     discount NUMERIC DEFAULT 0,
     tax NUMERIC DEFAULT 0,
+    tax_type TEXT DEFAULT 'GST_5',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
 
@@ -159,6 +161,18 @@ alter publication supabase_realtime add table public.tables;
 4. Click **Run** in the top right. You should see a message saying "Success". Your cloud tables are now fully provisioned and ready for real-time traffic.
 
 > **Note:** The `tables` table (dine-in table/order state) was historically optional — the app has defensive handling that treats a missing `tables` endpoint as "no tables yet" rather than erroring. If your project was set up before this migration was added, just run the `CREATE TABLE public.tables (...)` block above (plus its RLS policy and realtime line) on its own to add it retroactively; nothing else needs to change.
+
+### Existing project? Run this if you already have `tables` and `sales` set up
+
+If your `tables` and `sales` tables were created before `tax_type` (on `tables`) and `amount_paid` (on `sales`) were added above, run this once in the SQL Editor — it only adds the two missing columns and is safe to run even if one already exists:
+
+```sql
+ALTER TABLE public.tables ADD COLUMN IF NOT EXISTS tax_type TEXT DEFAULT 'GST_5';
+ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS amount_paid NUMERIC DEFAULT 0;
+```
+
+- `tables.tax_type` fixes a save error ("Could not find the 'taxType' column of 'tables' in the schema cache") that happens whenever a bill's tax type is saved without this column present.
+- `sales.amount_paid` backs the new "amount already paid / balance due" display when editing a saved bill in Reports — existing sales without this column are treated as fully paid (balance shows as ₹0) until edited.
 
 ---
 

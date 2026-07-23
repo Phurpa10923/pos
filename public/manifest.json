@@ -1,7 +1,7 @@
 {
   "short_name": "PortablePOS",
-  "name": "PortablePOS - Offline Portability Suite",
-  "description": "Premium offline-first POS billing, inventory manager, employee registers, and dining bill supervisor.",
+  "name": "PortablePOS - Cloud POS Suite",
+  "description": "Premium cloud-connected POS billing, inventory manager, employee registers, and dining bill supervisor.",
   "icons": [
     {
       "src": "/favicon.svg",
