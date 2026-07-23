@@ -570,10 +570,18 @@ export default function App() {
   const triggerInstantCloudSync = () => {
     if (syncConfig.enabled && isOnline) {
       performCloudSync().then((result) => {
-        if (result.success && result.count > 0) {
-          handleReloadDatabase();
+        if (result.success) {
+          if (result.count > 0) {
+            handleReloadDatabase();
+            addToast(`Synced ${result.count} changes to cloud!`, 'success');
+          }
+        } else {
+          addToast(`Cloud Sync warning: ${result.reason}`, 'warning');
         }
-      }).catch(err => console.warn('[PortablePOS Sync] Instant sync failed:', err));
+      }).catch(err => {
+        console.warn('[PortablePOS Sync] Instant sync failed:', err);
+        addToast(`Cloud Sync failed: ${err.message}`, 'error');
+      });
     }
   };
 
