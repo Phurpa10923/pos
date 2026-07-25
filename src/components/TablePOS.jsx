@@ -2,6 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { Search, ShoppingBag, Plus, Minus, Receipt, Check, Trash2, ArrowLeft, PlusCircle } from 'lucide-react';
 import { getTaxDetails } from '../taxUtils';
 
+// payment_method only ever holds the plain mode ('Cash'/'UPI'/'Card'/'Split (Cash + UPI)') —
+// the actual split breakdown lives in cashAmount/upiAmount, so build the display string here.
+function formatPaymentDisplay(sale) {
+  if (sale.paymentMethod !== 'Split (Cash + UPI)') return sale.paymentMethod;
+  return `Split - Cash ₹${(sale.cashAmount || 0).toFixed(2)} + UPI ₹${(sale.upiAmount || 0).toFixed(2)}`;
+}
+
 export default function TablePOS({
   tables = [],
   menu = [],
@@ -284,9 +291,9 @@ export default function TablePOS({
 
     // 2. Create Sale Record (tracking active cashier user)
     const saleId = `TXN-${Date.now().toString().slice(-6)}`;
-    const finalPaymentMethod = paymentMethod === 'Split'
-      ? `Split (Cash: ₹${splitCashAmount.toFixed(2)}, UPI: ₹${splitUpiAmount.toFixed(2)})`
-      : paymentMethod;
+    // DB constraint chk_payment only allows this exact literal for split-tender; the
+    // actual cash/UPI amounts are carried separately in cashAmount/upiAmount below.
+    const finalPaymentMethod = paymentMethod === 'Split' ? 'Split (Cash + UPI)' : paymentMethod;
     const finalCashAmount = paymentMethod === 'Split' ? splitCashAmount : (paymentMethod === 'Cash' ? finalTotal : 0);
     const finalUpiAmount = paymentMethod === 'Split' ? splitUpiAmount : (paymentMethod === 'UPI' ? finalTotal : 0);
 
@@ -1003,7 +1010,7 @@ export default function TablePOS({
                     )
                   )}
                   <div className="receipt-total-row grand">
-                    <span>Paid Total ({receiptData.paymentMethod}):</span>
+                    <span>Paid Total ({formatPaymentDisplay(receiptData)}):</span>
                     <span>₹{receiptData.total.toFixed(2)}</span>
                   </div>
                 </div>
@@ -1046,7 +1053,7 @@ export default function TablePOS({
                         taxText = `Tax (${receiptData.tax}%): ₹${(((receiptData.subtotal - (receiptData.subtotal * receiptData.discount) / 100) * receiptData.tax) / 100).toFixed(2)}\n`;
                       }
                       const storeName = restaurantName || 'PortablePOS';
-                      const message = `*--- ${storeName.toUpperCase()} E-BILL ---*\n*Bill ID:* ${receiptData.id}\n*Date:* ${new Date(receiptData.timestamp).toLocaleDateString()}\n*Time:* ${new Date(receiptData.timestamp).toLocaleTimeString()}\n*Table:* ${receiptData.tableName}\n-------------------------------------\n${itemsText}\n-------------------------------------\n*Subtotal:* ₹${receiptData.subtotal.toFixed(2)}\n${discountText}${taxText}*Grand Total:* ₹${receiptData.total.toFixed(2)}\n*Payment:* ${receiptData.paymentMethod}\n*Server:* ${receiptData.server_name || 'System'}\n*Cashier:* ${receiptData.cashier || 'Admin'}\n-------------------------------------\nThank you for your visit!\nPowered by ${storeName}.`;
+                      const message = `*--- ${storeName.toUpperCase()} E-BILL ---*\n*Bill ID:* ${receiptData.id}\n*Date:* ${new Date(receiptData.timestamp).toLocaleDateString()}\n*Time:* ${new Date(receiptData.timestamp).toLocaleTimeString()}\n*Table:* ${receiptData.tableName}\n-------------------------------------\n${itemsText}\n-------------------------------------\n*Subtotal:* ₹${receiptData.subtotal.toFixed(2)}\n${discountText}${taxText}*Grand Total:* ₹${receiptData.total.toFixed(2)}\n*Payment:* ${formatPaymentDisplay(receiptData)}\n*Server:* ${receiptData.server_name || 'System'}\n*Cashier:* ${receiptData.cashier || 'Admin'}\n-------------------------------------\nThank you for your visit!\nPowered by ${storeName}.`;
 
                       const url = `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(message)}`;
                       window.open(url, '_blank');

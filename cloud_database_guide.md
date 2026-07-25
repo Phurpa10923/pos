@@ -107,7 +107,7 @@ CREATE TABLE public.sales (
     tax_breakdown JSONB,
     total NUMERIC NOT NULL DEFAULT 0,
     amount_paid NUMERIC DEFAULT 0,
-    payment_method TEXT NOT NULL,
+    payment_method TEXT NOT NULL CONSTRAINT chk_payment CHECK (payment_method IN ('Cash', 'UPI', 'Card', 'Split (Cash + UPI)')),
     cash_amount NUMERIC DEFAULT 0,
     upi_amount NUMERIC DEFAULT 0,
     cashier TEXT,
@@ -186,6 +186,17 @@ ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS upi_amount NUMERIC DEFAULT 0;
 ```
 
 - For a `Cash`-only sale, `cash_amount` equals the total and `upi_amount` is 0 (and vice-versa for `UPI`). For `Split`, both hold their respective portions. Existing rows saved before this migration will show `0` for both until the bill is re-saved (e.g. via Edit Bill).
+
+### Existing project? Run this if inserts fail with `violates check constraint "chk_payment"`
+
+Some projects have a `chk_payment` check constraint on `sales.payment_method` that was set up by hand and only allows `'Cash'`, `'UPI'`, and `'Split (Cash + UPI)'` — missing `'Card'`, which the app's payment-method dropdown also offers. That mismatch makes every Card sale (and any split sale saved with the old free-text format) fail to insert. Run this once to widen the constraint to match the app's actual options:
+
+```sql
+ALTER TABLE public.sales DROP CONSTRAINT IF EXISTS chk_payment;
+ALTER TABLE public.sales ADD CONSTRAINT chk_payment CHECK (payment_method IN ('Cash', 'UPI', 'Card', 'Split (Cash + UPI)'));
+```
+
+Note the exact literal for split-tender is `'Split (Cash + UPI)'` — the actual cash/UPI split amounts live in `cash_amount`/`upi_amount` (added above), not in `payment_method` itself.
 
 ---
 

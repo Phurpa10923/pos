@@ -25,6 +25,14 @@ function getSplitAmounts(sale) {
   return match ? { cash: parseFloat(match[1]), upi: parseFloat(match[2]) } : { cash: 0, upi: 0 };
 }
 
+// payment_method only ever holds the plain mode ('Cash'/'UPI'/'Card'/'Split (Cash + UPI)') —
+// expand it with the actual cash/UPI amounts for display purposes (receipt, WhatsApp e-bill).
+function formatPaymentDisplay(sale) {
+  if (typeof sale.paymentMethod !== 'string' || !sale.paymentMethod.startsWith('Split')) return sale.paymentMethod;
+  const { cash, upi } = getSplitAmounts(sale);
+  return `Split - Cash ₹${cash.toFixed(2)} + UPI ₹${upi.toFixed(2)}`;
+}
+
 export default function Reports({
   sales = [],
   products = [],
@@ -773,9 +781,9 @@ export default function Reports({
       const isSplit = editPaymentMethod === 'Split';
       const finalCashAmount = isSplit ? editCashAmount : (editPaymentMethod === 'Cash' ? editTotal : 0);
       const finalUpiAmount = isSplit ? editUpiAmount : (editPaymentMethod === 'UPI' ? editTotal : 0);
-      const finalPaymentMethod = isSplit
-        ? `Split (Cash: ₹${finalCashAmount.toFixed(2)}, UPI: ₹${finalUpiAmount.toFixed(2)})`
-        : editPaymentMethod;
+      // DB constraint chk_payment only allows this exact literal for split-tender; the
+      // actual cash/UPI amounts are carried separately in cashAmount/upiAmount above.
+      const finalPaymentMethod = isSplit ? 'Split (Cash + UPI)' : editPaymentMethod;
 
       const updatedSale = {
         ...receiptData,
@@ -1360,7 +1368,7 @@ export default function Reports({
                     )
                   )}
                   <div className="receipt-total-row grand">
-                    <span>Paid Total ({receiptData.paymentMethod}):</span>
+                    <span>Paid Total ({formatPaymentDisplay(receiptData)}):</span>
                     <span>₹{receiptData.total.toFixed(2)}</span>
                   </div>
                 </div>
@@ -1415,7 +1423,7 @@ export default function Reports({
                       }
                       
                       const storeName = restaurantName || 'PortablePOS';
-                      const message = `*--- ${storeName.toUpperCase()} E-BILL ---*\n*Bill ID:* ${receiptData.id}\n*Date:* ${new Date(receiptData.timestamp).toLocaleDateString()}\n*Time:* ${new Date(receiptData.timestamp).toLocaleTimeString()}\n*Table:* ${receiptData.tableName}\n-------------------------------------\n${itemsText}\n-------------------------------------\n*Subtotal:* ₹${receiptData.subtotal.toFixed(2)}\n${discountText}${taxText}*Grand Total:* ₹${receiptData.total.toFixed(2)}\n*Payment:* ${receiptData.paymentMethod}\n*Server:* ${receiptData.server_name || 'System'}\n*Cashier:* ${receiptData.cashier || 'Admin'}\n-------------------------------------\nThank you for your visit!\nPowered by ${storeName}.`;
+                      const message = `*--- ${storeName.toUpperCase()} E-BILL ---*\n*Bill ID:* ${receiptData.id}\n*Date:* ${new Date(receiptData.timestamp).toLocaleDateString()}\n*Time:* ${new Date(receiptData.timestamp).toLocaleTimeString()}\n*Table:* ${receiptData.tableName}\n-------------------------------------\n${itemsText}\n-------------------------------------\n*Subtotal:* ₹${receiptData.subtotal.toFixed(2)}\n${discountText}${taxText}*Grand Total:* ₹${receiptData.total.toFixed(2)}\n*Payment:* ${formatPaymentDisplay(receiptData)}\n*Server:* ${receiptData.server_name || 'System'}\n*Cashier:* ${receiptData.cashier || 'Admin'}\n-------------------------------------\nThank you for your visit!\nPowered by ${storeName}.`;
 
                       const url = `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(message)}`;
                       window.open(url, '_blank');
