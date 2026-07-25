@@ -52,6 +52,10 @@ export default function Reports({
   const [receiptData, setReceiptData] = useState(null);
   const [whatsappNumber, setWhatsappNumber] = useState('');
 
+  // Mobile tab swapper for the Payment Split / Top Items / Transactions Log panels
+  // (stacked side by side on desktop, but too cramped to show all at once on a phone)
+  const [detailsTab, setDetailsTab] = useState('split'); // 'split' | 'items' | 'transactions'
+
   // Bill editing state (correcting a saved sale's items after the fact)
   const [isEditingBill, setIsEditingBill] = useState(false);
   const [editItems, setEditItems] = useState([]);
@@ -972,13 +976,33 @@ export default function Reports({
       )}
 
       {/* Details Row: Item breakdown & Transactions */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr', gap: '20px' }}>
-        
+      <div className="reports-tabs-header">
+        <button
+          className={`filter-tab ${detailsTab === 'split' ? 'active' : ''}`}
+          onClick={() => setDetailsTab('split')}
+        >
+          💰 Payment Split
+        </button>
+        <button
+          className={`filter-tab ${detailsTab === 'items' ? 'active' : ''}`}
+          onClick={() => setDetailsTab('items')}
+        >
+          🏆 Top Items
+        </button>
+        <button
+          className={`filter-tab ${detailsTab === 'transactions' ? 'active' : ''}`}
+          onClick={() => setDetailsTab('transactions')}
+        >
+          🧾 Transactions
+        </button>
+      </div>
+      <div className="reports-details-grid">
+
         {/* Top Items & Payment Splits */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          
+
           {/* Payment splits */}
-          <div className="glass-panel" style={{ padding: '20px' }}>
+          <div className={`glass-panel reports-detail-pane ${detailsTab === 'split' ? 'show-mobile' : ''}`} style={{ padding: '20px' }}>
             <h3 className="section-title" style={{ marginBottom: '16px' }}>Payment Split</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {Object.entries(paymentBreakdown).map(([method, amount]) => {
@@ -1007,7 +1031,7 @@ export default function Reports({
           </div>
 
           {/* Top Selling Items */}
-          <div className="glass-panel" style={{ padding: '20px' }}>
+          <div className={`glass-panel reports-detail-pane ${detailsTab === 'items' ? 'show-mobile' : ''}`} style={{ padding: '20px' }}>
             <h3 className="section-title" style={{ marginBottom: '16px' }}>Top Selling Items</h3>
             {sortedItemsSold.length === 0 ? (
               <p style={{ color: 'var(--text-muted)', fontSize: '13px', textAlign: 'center' }}>No items sold in this period.</p>
@@ -1025,7 +1049,7 @@ export default function Reports({
         </div>
 
         {/* Transactions list */}
-        <div className="glass-panel" style={{ padding: '20px' }}>
+        <div className={`glass-panel reports-detail-pane ${detailsTab === 'transactions' ? 'show-mobile' : ''}`} style={{ padding: '20px' }}>
           <h3 className="section-title" style={{ marginBottom: '16px' }}>Transactions Log</h3>
           {currentPeriodSales.length === 0 ? (
             <p style={{ color: 'var(--text-muted)', fontSize: '13px', textAlign: 'center', padding: '40px 0' }}>No completed orders recorded.</p>

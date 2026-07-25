@@ -1510,6 +1510,18 @@ body {
   display: none;
 }
 
+/* Reports Details Grid (Payment Split / Top Items / Transactions Log) desktop styling */
+.reports-details-grid {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr;
+  gap: 20px;
+}
+
+/* Hide mobile tabs for the Reports details grid on desktop */
+.reports-tabs-header {
+  display: none;
+}
+
 /* Reports top bar & export actions wrapper */
 .reports-top-bar {
   display: flex;
@@ -1596,5 +1608,50 @@ body {
   .report-header-actions > * {
     width: 100% !important;
     justify-content: center;
+  }
+
+  /* Payment Split / Top Items / Transactions Log collapse into swappable tabs on mobile
+     instead of the cramped stacked 3-panel layout */
+  .reports-details-grid {
+    display: block;
+  }
+
+  .reports-tabs-header {
+    display: flex;
+    background: rgba(0, 0, 0, 0.2);
+    padding: 3px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-color);
+    margin-bottom: 12px;
+    width: 100%;
+  }
+
+  .reports-tabs-header .filter-tab {
+    flex: 1;
+    text-align: center;
+    padding: 6px 8px;
+    font-size: 12px;
+    border-radius: var(--radius-xs);
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font-weight: 500;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    white-space: nowrap;
+  }
+
+  .reports-tabs-header .filter-tab.active {
+    background: var(--accent-indigo);
+    color: #fff;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+  }
+
+  .reports-detail-pane {
+    display: none !important;
+  }
+
+  .reports-detail-pane.show-mobile {
+    display: block !important;
   }
 }
