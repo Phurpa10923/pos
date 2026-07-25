@@ -287,6 +287,8 @@ export default function TablePOS({
     const finalPaymentMethod = paymentMethod === 'Split'
       ? `Split (Cash: ₹${splitCashAmount.toFixed(2)}, UPI: ₹${splitUpiAmount.toFixed(2)})`
       : paymentMethod;
+    const finalCashAmount = paymentMethod === 'Split' ? splitCashAmount : (paymentMethod === 'Cash' ? finalTotal : 0);
+    const finalUpiAmount = paymentMethod === 'Split' ? splitUpiAmount : (paymentMethod === 'UPI' ? finalTotal : 0);
 
     const newSale = {
       id: saleId,
@@ -307,6 +309,8 @@ export default function TablePOS({
       total: finalTotal,
       amountPaid: finalTotal,
       paymentMethod: finalPaymentMethod,
+      cashAmount: finalCashAmount,
+      upiAmount: finalUpiAmount,
       cashier: currentUser ? currentUser.name : 'Admin',
       server_name: activeTable.orderedBy || (currentUser ? currentUser.name : 'System'),
       whatsappNumber: whatsappNumber || ''

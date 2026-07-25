@@ -54,6 +54,8 @@ function toSnakeCase(item, tableName) {
     if ('taxAmount' in converted) { converted.tax_amount = Number(converted.taxAmount); delete converted.taxAmount; }
     if ('taxBreakdown' in converted) { converted.tax_breakdown = converted.taxBreakdown; delete converted.taxBreakdown; }
     if ('paymentMethod' in converted) { converted.payment_method = converted.paymentMethod; delete converted.paymentMethod; }
+    if ('cashAmount' in converted) { converted.cash_amount = Number(converted.cashAmount); delete converted.cashAmount; }
+    if ('upiAmount' in converted) { converted.upi_amount = Number(converted.upiAmount); delete converted.upiAmount; }
     if ('whatsappNumber' in converted) { converted.whatsapp_number = converted.whatsappNumber; delete converted.whatsappNumber; }
     if ('serverName' in converted) { converted.server_name = converted.serverName; delete converted.serverName; }
     if ('billTotal' in converted) { converted.bill_total = Number(converted.billTotal); delete converted.billTotal; }
@@ -106,6 +108,8 @@ function toCamelCase(item, tableName) {
     if ('tax_amount' in converted) { converted.taxAmount = Number(converted.tax_amount); delete converted.tax_amount; }
     if ('tax_breakdown' in converted) { converted.taxBreakdown = converted.tax_breakdown; delete converted.tax_breakdown; }
     if ('payment_method' in converted) { converted.paymentMethod = converted.payment_method; delete converted.payment_method; }
+    if ('cash_amount' in converted) { converted.cashAmount = Number(converted.cash_amount); delete converted.cash_amount; }
+    if ('upi_amount' in converted) { converted.upiAmount = Number(converted.upi_amount); delete converted.upi_amount; }
     if ('whatsapp_number' in converted) { converted.whatsappNumber = converted.whatsapp_number; delete converted.whatsapp_number; }
     if ('server_name' in converted) { converted.serverName = converted.server_name; delete converted.server_name; }
     if ('bill_total' in converted) { converted.billTotal = Number(converted.bill_total); delete converted.bill_total; }

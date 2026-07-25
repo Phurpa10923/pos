@@ -108,6 +108,8 @@ CREATE TABLE public.sales (
     total NUMERIC NOT NULL DEFAULT 0,
     amount_paid NUMERIC DEFAULT 0,
     payment_method TEXT NOT NULL,
+    cash_amount NUMERIC DEFAULT 0,
+    upi_amount NUMERIC DEFAULT 0,
     cashier TEXT,
     server_name TEXT,
     whatsapp_number TEXT,
@@ -173,6 +175,17 @@ ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS amount_paid NUMERIC DEFAULT 0;
 
 - `tables.tax_type` fixes a save error ("Could not find the 'taxType' column of 'tables' in the schema cache") that happens whenever a bill's tax type is saved without this column present.
 - `sales.amount_paid` backs the new "amount already paid / balance due" display when editing a saved bill in Reports — existing sales without this column are treated as fully paid (balance shows as ₹0) until edited.
+
+### Existing project? Run this if you don't have `cash_amount` / `upi_amount` on `sales`
+
+Split-tender bills (part cash, part UPI) used to be stored only as a formatted string inside `payment_method` (e.g. `"Split (Cash: ₹120.00, UPI: ₹80.00)"`), which meant the Reports screen had to regex-parse that string to show the breakdown, and it broke silently whenever a bill's payment mode was edited. Run this once in the SQL Editor to add two structured columns instead — safe to run even if they already exist:
+
+```sql
+ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS cash_amount NUMERIC DEFAULT 0;
+ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS upi_amount NUMERIC DEFAULT 0;
+```
+
+- For a `Cash`-only sale, `cash_amount` equals the total and `upi_amount` is 0 (and vice-versa for `UPI`). For `Split`, both hold their respective portions. Existing rows saved before this migration will show `0` for both until the bill is re-saved (e.g. via Edit Bill).
 
 ---
 

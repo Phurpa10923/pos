@@ -13,6 +13,18 @@ function escapeHtml(value) {
   }[ch]));
 }
 
+// Cash/UPI portions of a split-tender sale. Prefers the structured cashAmount/upiAmount
+// columns; falls back to parsing the legacy "Split (Cash: ₹X, UPI: ₹Y)" string for sales
+// saved before those columns existed.
+function getSplitAmounts(sale) {
+  if (typeof sale.cashAmount === 'number' || typeof sale.upiAmount === 'number') {
+    return { cash: sale.cashAmount || 0, upi: sale.upiAmount || 0 };
+  }
+  const match = typeof sale.paymentMethod === 'string'
+    && sale.paymentMethod.match(/Cash: ₹([\d.]+).*UPI: ₹([\d.]+)/);
+  return match ? { cash: parseFloat(match[1]), upi: parseFloat(match[2]) } : { cash: 0, upi: 0 };
+}
+
 export default function Reports({
   sales = [],
   products = [],
@@ -37,6 +49,8 @@ export default function Reports({
   const [editItems, setEditItems] = useState([]);
   const [editDiscount, setEditDiscount] = useState(0);
   const [editTaxType, setEditTaxType] = useState('GST_5');
+  const [editPaymentMethod, setEditPaymentMethod] = useState('Cash');
+  const [editSplitCashAmount, setEditSplitCashAmount] = useState(0);
   const [addItemProductId, setAddItemProductId] = useState('');
   const [settleBalanceNow, setSettleBalanceNow] = useState(false);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
@@ -253,11 +267,11 @@ export default function Reports({
   // Payment Breakdown (split-tender sales are bucketed into their Cash/UPI portions
   // instead of the raw "Split (Cash: ..., UPI: ...)" string, so cash reconciliation adds up)
   const paymentBreakdown = currentPeriodSales.reduce((acc, s) => {
-    const splitMatch = typeof s.paymentMethod === 'string'
-      && s.paymentMethod.match(/^Split \(Cash: ₹([\d.]+), UPI: ₹([\d.]+)\)/);
-    if (splitMatch) {
-      acc.Cash = (acc.Cash || 0) + parseFloat(splitMatch[1]);
-      acc.UPI = (acc.UPI || 0) + parseFloat(splitMatch[2]);
+    const isSplit = typeof s.paymentMethod === 'string' && s.paymentMethod.startsWith('Split');
+    if (isSplit) {
+      const { cash, upi } = getSplitAmounts(s);
+      acc.Cash = (acc.Cash || 0) + cash;
+      acc.UPI = (acc.UPI || 0) + upi;
     } else {
       acc[s.paymentMethod] = (acc[s.paymentMethod] || 0) + s.total;
     }
@@ -695,6 +709,9 @@ export default function Reports({
     setEditItems(receiptData.items.map(item => ({ ...item })));
     setEditDiscount(receiptData.discount || 0);
     setEditTaxType(receiptData.taxType || 'GST_5');
+    const isSplit = typeof receiptData.paymentMethod === 'string' && receiptData.paymentMethod.startsWith('Split');
+    setEditPaymentMethod(isSplit ? 'Split' : (receiptData.paymentMethod || 'Cash'));
+    setEditSplitCashAmount(isSplit ? getSplitAmounts(receiptData).cash : 0);
     setAddItemProductId('');
     setSettleBalanceNow(false);
     setIsEditingBill(true);
@@ -737,6 +754,11 @@ export default function Reports({
   const editTaxAmount = (editTaxableAmount * editTaxDetails.rate) / 100;
   const editTotal = editTaxableAmount + editTaxAmount;
 
+  // Split cash portion is clamped to the (possibly item-edited) new total; UPI is always
+  // the remainder, so the two stay in sync as items/discount/tax change during editing.
+  const editCashAmount = Math.max(0, Math.min(editTotal, editSplitCashAmount));
+  const editUpiAmount = Number((editTotal - editCashAmount).toFixed(2));
+
   const originalAmountPaid = receiptData ? (receiptData.amountPaid ?? receiptData.total) : 0;
   const currentBalanceDue = receiptData ? (receiptData.total - originalAmountPaid) : 0;
   const editBalanceDue = editTotal - originalAmountPaid;
@@ -748,6 +770,13 @@ export default function Reports({
     }
     setIsSavingEdit(true);
     try {
+      const isSplit = editPaymentMethod === 'Split';
+      const finalCashAmount = isSplit ? editCashAmount : (editPaymentMethod === 'Cash' ? editTotal : 0);
+      const finalUpiAmount = isSplit ? editUpiAmount : (editPaymentMethod === 'UPI' ? editTotal : 0);
+      const finalPaymentMethod = isSplit
+        ? `Split (Cash: ₹${finalCashAmount.toFixed(2)}, UPI: ₹${finalUpiAmount.toFixed(2)})`
+        : editPaymentMethod;
+
       const updatedSale = {
         ...receiptData,
         items: editItems,
@@ -758,7 +787,10 @@ export default function Reports({
         taxAmount: editTaxAmount,
         taxBreakdown: editTaxDetails.breakdown,
         total: editTotal,
-        amountPaid: settleBalanceNow ? editTotal : originalAmountPaid
+        amountPaid: settleBalanceNow ? editTotal : originalAmountPaid,
+        paymentMethod: finalPaymentMethod,
+        cashAmount: finalCashAmount,
+        upiAmount: finalUpiAmount
       };
       const success = await onEditSale(receiptData, updatedSale);
       if (success) {
@@ -1005,14 +1037,24 @@ export default function Reports({
                 <tbody>
                   {currentPeriodSales.slice().reverse().map(sale => {
                     const balance = sale.total - (sale.amountPaid ?? sale.total);
+                    const isSplit = sale.paymentMethod.startsWith('Split');
+                    const { cash: splitCash, upi: splitUpi } = isSplit ? getSplitAmounts(sale) : { cash: 0, upi: 0 };
                     return (
                     <tr key={sale.id} onClick={() => { setReceiptData(sale); setShowReceiptModal(true); }} style={{ cursor: 'pointer' }} title="Click to view full receipt">
                       <td style={{ fontWeight: '500' }}>{sale.id}</td>
                       <td>{sale.tableName}</td>
                       <td>
-                        <span className={`badge ${sale.paymentMethod.startsWith('Split') ? 'badge-indigo' : sale.paymentMethod.startsWith('Cash') ? 'badge-teal' : sale.paymentMethod.includes('UPI') || sale.paymentMethod.includes('GPay') ? 'badge-emerald' : 'badge-indigo'}`}>
-                          {sale.paymentMethod.length > 10 ? sale.paymentMethod.split(' ')[0] : sale.paymentMethod}
+                        <span
+                          className={`badge ${isSplit ? 'badge-indigo' : sale.paymentMethod.startsWith('Cash') ? 'badge-teal' : sale.paymentMethod.includes('UPI') || sale.paymentMethod.includes('GPay') ? 'badge-emerald' : 'badge-indigo'}`}
+                          title={isSplit ? `Cash ₹${splitCash.toFixed(2)} + UPI ₹${splitUpi.toFixed(2)}` : sale.paymentMethod}
+                        >
+                          {isSplit ? 'Split' : (sale.paymentMethod.length > 10 ? sale.paymentMethod.split(' ')[0] : sale.paymentMethod)}
                         </span>
+                        {isSplit && (
+                          <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px', whiteSpace: 'nowrap' }}>
+                            ₹{splitCash.toFixed(2)} cash + ₹{splitUpi.toFixed(2)} upi
+                          </div>
+                        )}
                       </td>
                       <td>
                         <span className="badge badge-muted" style={{ textTransform: 'none' }}>
@@ -1165,6 +1207,65 @@ export default function Reports({
                     </select>
                   </div>
                 </div>
+
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label>Payment Method</label>
+                  <select
+                    className="input-field select-field"
+                    value={editPaymentMethod}
+                    onChange={(e) => {
+                      setEditPaymentMethod(e.target.value);
+                      if (e.target.value === 'Split') {
+                        setEditSplitCashAmount(editTotal);
+                      }
+                    }}
+                  >
+                    <option value="Cash">💵 Cash</option>
+                    <option value="UPI">📱 UPI/Online</option>
+                    <option value="Card">💳 Card</option>
+                    <option value="Split">🔀 Split (Cash + UPI)</option>
+                  </select>
+                </div>
+
+                {editPaymentMethod === 'Split' && (
+                  <div style={{ background: 'rgba(255,255,255,0.01)', padding: '14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                      <div className="form-group" style={{ marginBottom: 0 }}>
+                        <label>Cash Portion (₹)</label>
+                        <input
+                          type="number"
+                          min="0"
+                          max={editTotal}
+                          step="0.01"
+                          className="input-field"
+                          value={editCashAmount}
+                          onChange={(e) => {
+                            const cashVal = Math.max(0, Math.min(editTotal, parseFloat(e.target.value) || 0));
+                            setEditSplitCashAmount(cashVal);
+                          }}
+                        />
+                      </div>
+                      <div className="form-group" style={{ marginBottom: 0 }}>
+                        <label>UPI / GPay Portion (₹)</label>
+                        <input
+                          type="number"
+                          min="0"
+                          max={editTotal}
+                          step="0.01"
+                          className="input-field"
+                          value={editUpiAmount}
+                          onChange={(e) => {
+                            const upiVal = Math.max(0, Math.min(editTotal, parseFloat(e.target.value) || 0));
+                            setEditSplitCashAmount(Number((editTotal - upiVal).toFixed(2)));
+                          }}
+                        />
+                      </div>
+                    </div>
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                      Split: ₹{editCashAmount.toFixed(2)} (Cash) + ₹{editUpiAmount.toFixed(2)} (UPI) = ₹{editTotal.toFixed(2)}
+                    </span>
+                  </div>
+                )}
 
                 <div className="receipt-totals">
                   <div className="receipt-total-row">
