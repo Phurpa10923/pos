@@ -227,6 +227,18 @@ export default function TablePOS({
   const taxAmount = (taxableAmount * taxDetails.rate) / 100;
   const finalTotal = taxableAmount + taxAmount;
 
+  // Re-sync split payment amounts if discount/tax edits change the payable total
+  // after Split was already selected, so Cash + UPI always sums to finalTotal.
+  useEffect(() => {
+    if (paymentMethod !== 'Split') return;
+    setSplitCashAmount(prevCash => {
+      const clampedCash = Number(Math.min(prevCash, finalTotal).toFixed(2));
+      setSplitUpiAmount(Number((finalTotal - clampedCash).toFixed(2)));
+      return clampedCash;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [finalTotal]);
+
   // Action: Click Checkout
   const handleCheckoutClick = () => {
     if (!activeTable || activeTable.currentOrder.length === 0) return;
@@ -593,7 +605,7 @@ export default function TablePOS({
       )}
 
       {/* POS Menu and Ticket Overlay Split */}
-      {activeTable ? (
+      {activeTable && mobileTab === 'order' ? (
         <div className={`pos-split ${mobileTab === 'order' ? 'mobile-show' : 'mobile-hide'}`}>
           {/* Catalog / Products (Menu selection) */}
           <div className={`catalog-pane ${activeOrderTab === 'menu' ? 'show-mobile' : 'hide-mobile'}`}>
@@ -752,9 +764,9 @@ export default function TablePOS({
         <div style={{ display: window.innerWidth > 900 ? 'flex' : 'none', flex: 1, alignItems: 'center', justifyItems: 'center', height: '100%' }}>
           <div className="glass-panel" style={{ padding: '40px', textAlign: 'center', margin: 'auto', maxWidth: '400px' }}>
             <ShoppingBag size={48} style={{ color: 'var(--text-muted)', marginBottom: '16px' }} />
-            <h3>No Table Selected</h3>
+            <h3>{activeTable ? activeTable.name : 'No Table Selected'}</h3>
             <p style={{ color: 'var(--text-secondary)', fontSize: '14px', marginTop: '8px' }}>
-              Select a dining table from the map layout on the left to begin drafting order bills.
+              {activeTable ? 'Click this table again to resume drafting its order.' : 'Select a dining table from the map layout on the left to begin drafting order bills.'}
             </p>
           </div>
         </div>

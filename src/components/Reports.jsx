@@ -3,6 +3,16 @@ import { dbFetchSalesByRange } from '../cloudDb';
 import { getTaxDetails } from '../taxUtils';
 import { Calendar, Download, RefreshCw, BarChart2, TrendingUp, PieChart, IndianRupee, Pencil, Plus, Minus, Trash2 } from 'lucide-react';
 
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (ch) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  }[ch]));
+}
+
 export default function Reports({
   sales = [],
   products = [],
@@ -240,9 +250,17 @@ export default function Reports({
     return sum + (saleProfit * discountRatio);
   }, 0);
 
-  // Payment Breakdown
+  // Payment Breakdown (split-tender sales are bucketed into their Cash/UPI portions
+  // instead of the raw "Split (Cash: ..., UPI: ...)" string, so cash reconciliation adds up)
   const paymentBreakdown = currentPeriodSales.reduce((acc, s) => {
-    acc[s.paymentMethod] = (acc[s.paymentMethod] || 0) + s.total;
+    const splitMatch = typeof s.paymentMethod === 'string'
+      && s.paymentMethod.match(/^Split \(Cash: ₹([\d.]+), UPI: ₹([\d.]+)\)/);
+    if (splitMatch) {
+      acc.Cash = (acc.Cash || 0) + parseFloat(splitMatch[1]);
+      acc.UPI = (acc.UPI || 0) + parseFloat(splitMatch[2]);
+    } else {
+      acc[s.paymentMethod] = (acc[s.paymentMethod] || 0) + s.total;
+    }
     return acc;
   }, { Cash: 0, Card: 0, UPI: 0 });
 
@@ -464,8 +482,7 @@ export default function Reports({
       return;
     }
 
-    let html = `
-      <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+    let html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
       <head>
         <meta charset="utf-8" />
         <!--[if gte mso 9]>
@@ -531,8 +548,8 @@ export default function Reports({
     itemizedSalesList.forEach(item => {
       html += `
         <tr>
-          <td>${item.name}</td>
-          <td>${item.category}</td>
+          <td>${escapeHtml(item.name)}</td>
+          <td>${escapeHtml(item.category)}</td>
           <td class="number">${item.quantity}</td>
           <td class="number">${item.price.toFixed(2)}</td>
           <td class="number">${item.revenue.toFixed(2)}</td>
@@ -572,17 +589,17 @@ export default function Reports({
       const taxAmt = s.taxAmount || 0;
       html += `
         <tr>
-          <td>${s.id}</td>
-          <td>${new Date(s.timestamp).toLocaleString()}</td>
-          <td>${s.tableName}</td>
-          <td>${itemSummary}</td>
+          <td>${escapeHtml(s.id)}</td>
+          <td>${escapeHtml(new Date(s.timestamp).toLocaleString())}</td>
+          <td>${escapeHtml(s.tableName)}</td>
+          <td>${escapeHtml(itemSummary)}</td>
           <td class="number">${s.subtotal.toFixed(2)}</td>
           <td class="number">${s.discount}%</td>
-          <td>${s.taxType || 'N/A'} (${taxRate}%)</td>
+          <td>${escapeHtml(s.taxType || 'N/A')} (${taxRate}%)</td>
           <td class="number">${taxAmt.toFixed(2)}</td>
           <td class="number">${s.total.toFixed(2)}</td>
-          <td>${s.paymentMethod}</td>
-          <td>${s.cashier || 'Admin'}</td>
+          <td>${escapeHtml(s.paymentMethod)}</td>
+          <td>${escapeHtml(s.cashier || 'Admin')}</td>
         </tr>
       `;
     });
@@ -605,7 +622,7 @@ export default function Reports({
     Object.entries(paymentBreakdown).forEach(([method, amount]) => {
       html += `
         <tr>
-          <td>${method}</td>
+          <td>${escapeHtml(method)}</td>
           <td class="number">${amount.toFixed(2)}</td>
         </tr>
       `;
@@ -618,7 +635,7 @@ export default function Reports({
       </html>
     `;
     
-    const blob = new Blob([html], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+    const blob = new Blob([html.trim()], { type: 'application/vnd.ms-excel;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
@@ -993,7 +1010,7 @@ export default function Reports({
                       <td style={{ fontWeight: '500' }}>{sale.id}</td>
                       <td>{sale.tableName}</td>
                       <td>
-                        <span className={`badge ${sale.paymentMethod.startsWith('Cash') ? 'badge-teal' : sale.paymentMethod.includes('UPI') || sale.paymentMethod.includes('GPay') ? 'badge-emerald' : 'badge-indigo'}`}>
+                        <span className={`badge ${sale.paymentMethod.startsWith('Split') ? 'badge-indigo' : sale.paymentMethod.startsWith('Cash') ? 'badge-teal' : sale.paymentMethod.includes('UPI') || sale.paymentMethod.includes('GPay') ? 'badge-emerald' : 'badge-indigo'}`}>
                           {sale.paymentMethod.length > 10 ? sale.paymentMethod.split(' ')[0] : sale.paymentMethod}
                         </span>
                       </td>
