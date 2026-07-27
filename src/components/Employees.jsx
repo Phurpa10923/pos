@@ -111,6 +111,7 @@ export default function Employees({
 
   // Clock In Employee
   const handleClockIn = (employee) => {
+    if (!confirm(`Clock in ${employee.name} now?`)) return;
     const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const attendanceId = `${selectedDate}_${employee.id}`;
     
@@ -134,7 +135,6 @@ export default function Employees({
 
   // Clock Out Employee
   const handleClockOut = (employee) => {
-    const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const attendanceId = `${selectedDate}_${employee.id}`;
     const existingLog = attendance.find(a => a.id === attendanceId);
 
@@ -143,6 +143,8 @@ export default function Employees({
       return;
     }
 
+    if (!confirm(`Clock out ${employee.name} now?`)) return;
+    const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const clockOutRaw = Date.now();
     const clockInRaw = existingLog.clockInRaw || (clockOutRaw - 8 * 60 * 60 * 1000); // default to 8 hours if missing
     const diffMs = clockOutRaw - clockInRaw;

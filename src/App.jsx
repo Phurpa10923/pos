@@ -888,6 +888,7 @@ export default function App() {
               tables={tables}
               menu={menu}
               inventory={inventory}
+              employees={employees}
               onUpdateTables={handleUpdateTables}
               onUpdateMenu={handleUpdateMenu}
               onUpdateInventory={handleUpdateInventory}

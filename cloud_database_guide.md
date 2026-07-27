@@ -113,6 +113,9 @@ CREATE TABLE public.sales (
     cashier TEXT,
     server_name TEXT,
     whatsapp_number TEXT,
+    is_staff_bill BOOLEAN DEFAULT FALSE,
+    staff_id TEXT,
+    staff_name TEXT,
     synced BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
@@ -197,6 +200,20 @@ ALTER TABLE public.sales ADD CONSTRAINT chk_payment CHECK (payment_method IN ('C
 ```
 
 Note the exact literal for split-tender is `'Split (Cash + UPI)'` — the actual cash/UPI split amounts live in `cash_amount`/`upi_amount` (added above), not in `payment_method` itself.
+
+### Existing project? Run this if you don't have `is_staff_bill` / `staff_id` / `staff_name` on `sales`
+
+Staff meals (food/drinks billed to an employee rather than a paying customer) need to be excluded from revenue and profit, and tracked as an expense instead — but they still need a row in `sales` so the item/inventory consumption is recorded. Run this once to add the columns that flag and label a staff bill:
+
+```sql
+ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS is_staff_bill BOOLEAN DEFAULT FALSE;
+ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS staff_id TEXT;
+ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS staff_name TEXT;
+```
+
+- `is_staff_bill` is what Reports uses to exclude a sale from Gross Revenue / Net Profit and the Top Selling Items / Itemized Sales tables, and instead fold its ingredient cost into the "Staff Meal Expense" figure.
+- `staff_id`/`staff_name` identify which employee it was billed to (denormalized at checkout time, so the label survives even if that employee is later renamed or removed from the roster).
+- Existing rows default to `is_staff_bill = false`, so nothing already in your sales history is reclassified.
 
 ---
 

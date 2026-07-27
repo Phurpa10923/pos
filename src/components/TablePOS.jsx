@@ -13,6 +13,7 @@ export default function TablePOS({
   tables = [],
   menu = [],
   inventory = [],
+  employees = [],
   onUpdateTables,
   onUpdateMenu,
   onUpdateInventory,
@@ -41,7 +42,11 @@ export default function TablePOS({
   const [whatsappNumber, setWhatsappNumber] = useState('');
   const [splitCashAmount, setSplitCashAmount] = useState(0);
   const [splitUpiAmount, setSplitUpiAmount] = useState(0);
-  
+  // Staff bill: billed to an employee (e.g. a staff meal) instead of a paying customer —
+  // Reports excludes these from revenue/profit and tracks their cost as an expense instead.
+  const [isStaffBill, setIsStaffBill] = useState(false);
+  const [staffMemberId, setStaffMemberId] = useState('');
+
   // Add Table state
   const [showAddTableModal, setShowAddTableModal] = useState(false);
   const [newTableName, setNewTableName] = useState('');
@@ -262,12 +267,20 @@ export default function TablePOS({
     setPaymentMethod('Cash');
     setSplitCashAmount(0);
     setSplitUpiAmount(0);
+    setIsStaffBill(false);
+    setStaffMemberId('');
     setShowPaymentModal(true);
   };
 
   // Action: Complete Payment and close bill
   const handleCompletePayment = () => {
     if (!activeTable) return;
+
+    const staffMember = isStaffBill ? employees.find(e => e.id === staffMemberId) : null;
+    if (isStaffBill && !staffMember) {
+      addToast('Select which staff member this bill is for.', 'warning');
+      return;
+    }
 
     // 1. Decrement raw inventory quantities based on order consumption
     const updatedInventory = inventory.map(invItem => {
@@ -320,7 +333,10 @@ export default function TablePOS({
       upiAmount: finalUpiAmount,
       cashier: currentUser ? currentUser.name : 'Admin',
       server_name: activeTable.orderedBy || (currentUser ? currentUser.name : 'System'),
-      whatsappNumber: whatsappNumber || ''
+      whatsappNumber: whatsappNumber || '',
+      isStaffBill,
+      staffId: staffMember ? staffMember.id : null,
+      staffName: staffMember ? staffMember.name : null
     };
 
     // 3. Reset the Table Status
@@ -350,6 +366,8 @@ export default function TablePOS({
     setShowReceiptModal(true);
     setSplitCashAmount(0);
     setSplitUpiAmount(0);
+    setIsStaffBill(false);
+    setStaffMemberId('');
 
     addToast(`Bill closed for ${activeTable.name}. Transaction saved!`);
   };
@@ -386,7 +404,7 @@ export default function TablePOS({
       
       const width = 400;
       const itemHeight = 25;
-      const headerHeight = 180;
+      const headerHeight = data.isStaffBill ? 200 : 180;
       const footerHeight = 180;
       const height = headerHeight + (data.items.length * itemHeight) + footerHeight;
       
@@ -417,7 +435,12 @@ export default function TablePOS({
       ctx.fillText(`Table: ${data.tableName}`, 20, y); y += 20;
       ctx.fillText(`Server: ${data.server_name || 'System'}`, 20, y); y += 20;
       ctx.fillText(`Cashier: ${data.cashier || 'Admin'}`, 20, y); y += 20;
-      
+      if (data.isStaffBill) {
+        ctx.font = 'bold 12px monospace';
+        ctx.fillText(`STAFF BILL: ${data.staffName || 'Staff'}`, 20, y); y += 20;
+        ctx.font = '12px monospace';
+      }
+
       ctx.fillText('------------------------------------------', 20, y); y += 20;
       
       // Column headers
@@ -918,6 +941,35 @@ export default function TablePOS({
                 </div>
               )}
 
+              <div style={{ background: 'rgba(255,255,255,0.01)', padding: '14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={isStaffBill}
+                    onChange={(e) => {
+                      setIsStaffBill(e.target.checked);
+                      if (!e.target.checked) setStaffMemberId('');
+                    }}
+                  />
+                  🧑‍🍳 Staff Bill (internal — no profit, tracked as expense)
+                </label>
+                {isStaffBill && (
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label>Staff Member</label>
+                    <select
+                      className="input-field select-field"
+                      value={staffMemberId}
+                      onChange={(e) => setStaffMemberId(e.target.value)}
+                    >
+                      <option value="">Select employee...</option>
+                      {employees.map(emp => (
+                        <option key={emp.id} value={emp.id}>{emp.name} — {emp.role}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+
               <div className="form-group">
                 <label>WhatsApp Number (Optional)</label>
                 <input
@@ -972,8 +1024,11 @@ export default function TablePOS({
                   <p>Bill ID: {receiptData.id}</p>
                   <p>Table: {receiptData.tableName}</p>
                   <p>Server: {receiptData.server_name || 'System'} | Cashier: {receiptData.cashier || 'Admin'}</p>
+                  {receiptData.isStaffBill && (
+                    <p style={{ fontWeight: 700 }}>🧑‍🍳 STAFF BILL — {receiptData.staffName || 'Staff'}</p>
+                  )}
                 </div>
-                
+
                 <div className="receipt-items">
                   {receiptData.items.map((item, idx) => (
                     <div key={idx} className="receipt-item-row">
@@ -1053,7 +1108,8 @@ export default function TablePOS({
                         taxText = `Tax (${receiptData.tax}%): ₹${(((receiptData.subtotal - (receiptData.subtotal * receiptData.discount) / 100) * receiptData.tax) / 100).toFixed(2)}\n`;
                       }
                       const storeName = restaurantName || 'PortablePOS';
-                      const message = `*--- ${storeName.toUpperCase()} E-BILL ---*\n*Bill ID:* ${receiptData.id}\n*Date:* ${new Date(receiptData.timestamp).toLocaleDateString()}\n*Time:* ${new Date(receiptData.timestamp).toLocaleTimeString()}\n*Table:* ${receiptData.tableName}\n-------------------------------------\n${itemsText}\n-------------------------------------\n*Subtotal:* ₹${receiptData.subtotal.toFixed(2)}\n${discountText}${taxText}*Grand Total:* ₹${receiptData.total.toFixed(2)}\n*Payment:* ${formatPaymentDisplay(receiptData)}\n*Server:* ${receiptData.server_name || 'System'}\n*Cashier:* ${receiptData.cashier || 'Admin'}\n-------------------------------------\nThank you for your visit!\nPowered by ${storeName}.`;
+                      const staffBillLine = receiptData.isStaffBill ? `*STAFF BILL:* ${receiptData.staffName || 'Staff'}\n` : '';
+                      const message = `*--- ${storeName.toUpperCase()} E-BILL ---*\n*Bill ID:* ${receiptData.id}\n*Date:* ${new Date(receiptData.timestamp).toLocaleDateString()}\n*Time:* ${new Date(receiptData.timestamp).toLocaleTimeString()}\n*Table:* ${receiptData.tableName}\n-------------------------------------\n${itemsText}\n-------------------------------------\n*Subtotal:* ₹${receiptData.subtotal.toFixed(2)}\n${discountText}${taxText}*Grand Total:* ₹${receiptData.total.toFixed(2)}\n*Payment:* ${formatPaymentDisplay(receiptData)}\n*Server:* ${receiptData.server_name || 'System'}\n*Cashier:* ${receiptData.cashier || 'Admin'}\n${staffBillLine}-------------------------------------\nThank you for your visit!\nPowered by ${storeName}.`;
 
                       const url = `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(message)}`;
                       window.open(url, '_blank');

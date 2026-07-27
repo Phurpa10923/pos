@@ -316,6 +316,7 @@ body {
 .stat-icon.indigo { background: var(--accent-indigo-glow); color: var(--accent-indigo); }
 .stat-icon.emerald { background: var(--accent-emerald-glow); color: var(--accent-emerald); }
 .stat-icon.coral { background: var(--accent-coral-glow); color: var(--accent-coral); }
+.stat-icon.amber { background: var(--accent-amber-glow); color: var(--accent-amber); }
 
 .dashboard-details {
   display: grid;

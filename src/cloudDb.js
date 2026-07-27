@@ -62,6 +62,9 @@ function toSnakeCase(item, tableName) {
     if ('subtotal' in converted) { converted.subtotal = Number(converted.subtotal); }
     if ('discount' in converted) { converted.discount = Number(converted.discount); }
     if ('amountPaid' in converted) { converted.amount_paid = Number(converted.amountPaid); delete converted.amountPaid; }
+    if ('isStaffBill' in converted) { converted.is_staff_bill = Boolean(converted.isStaffBill); delete converted.isStaffBill; }
+    if ('staffId' in converted) { converted.staff_id = converted.staffId; delete converted.staffId; }
+    if ('staffName' in converted) { converted.staff_name = converted.staffName; delete converted.staffName; }
   }
 
   if (tableName === 'attendance') {
@@ -116,6 +119,9 @@ function toCamelCase(item, tableName) {
     if ('subtotal' in converted) { converted.subtotal = Number(converted.subtotal); }
     if ('discount' in converted) { converted.discount = Number(converted.discount); }
     if ('amount_paid' in converted) { converted.amountPaid = Number(converted.amount_paid); delete converted.amount_paid; }
+    if ('is_staff_bill' in converted) { converted.isStaffBill = Boolean(converted.is_staff_bill); delete converted.is_staff_bill; }
+    if ('staff_id' in converted) { converted.staffId = converted.staff_id; delete converted.staff_id; }
+    if ('staff_name' in converted) { converted.staffName = converted.staff_name; delete converted.staff_name; }
   }
 
   if (tableName === 'attendance') {

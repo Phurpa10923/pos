@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { dbFetchSalesByRange } from '../cloudDb';
 import { getTaxDetails } from '../taxUtils';
-import { Calendar, Download, RefreshCw, BarChart2, TrendingUp, PieChart, IndianRupee, Pencil, Plus, Minus, Trash2 } from 'lucide-react';
+import { Calendar, Download, RefreshCw, BarChart2, TrendingUp, PieChart, IndianRupee, Pencil, Plus, Minus, Trash2, Users } from 'lucide-react';
 
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, (ch) => ({
@@ -253,22 +253,29 @@ export default function Reports({
 
   // Metrics Calculations
   const totalSalesCount = currentPeriodSales.length;
-  const totalRevenue = currentPeriodSales.reduce((sum, s) => sum + s.total, 0);
 
-  // Calculate Profit (Sale price - Cost price of raw materials)
-  const totalProfit = currentPeriodSales.reduce((sum, sale) => {
+  // Staff bills (internal meals billed to an employee) are excluded from revenue/profit
+  // and top-selling/itemized breakdowns — their ingredient cost is tracked separately as
+  // a business expense instead, since there's no real customer sale behind them.
+  const customerSales = currentPeriodSales.filter(s => !s.isStaffBill);
+  const staffBillSales = currentPeriodSales.filter(s => s.isStaffBill);
+
+  const totalRevenue = customerSales.reduce((sum, s) => sum + s.total, 0);
+
+  // Wholesale/ingredient cost of one line item, via its linked inventory raw material
+  const itemCost = (item) => {
+    const menuItem = products.find(m => m.id === item.productId);
+    if (menuItem && menuItem.inventoryId) {
+      const invItem = inventory.find(inv => inv.id === menuItem.inventoryId);
+      if (invItem) return (invItem.costPrice || 0) * (menuItem.inventoryQty || 1);
+    }
+    return 0;
+  };
+
+  // Calculate Profit (Sale price - Cost price of raw materials), customer sales only
+  const customerProfit = customerSales.reduce((sum, sale) => {
     const saleProfit = sale.items.reduce((itemSum, item) => {
-      const menuItem = products.find(m => m.id === item.productId);
-      let cost = 0;
-      
-      if (menuItem && menuItem.inventoryId) {
-        const invItem = inventory.find(inv => inv.id === menuItem.inventoryId);
-        if (invItem) {
-          cost = (invItem.costPrice || 0) * (menuItem.inventoryQty || 1);
-        }
-      }
-      
-      const profitPerUnit = item.price - cost;
+      const profitPerUnit = item.price - itemCost(item);
       return itemSum + (profitPerUnit * item.quantity);
     }, 0);
     // Subtract discounts proportionally from profit
@@ -276,8 +283,18 @@ export default function Reports({
     return sum + (saleProfit * discountRatio);
   }, 0);
 
+  // Staff meal expense: the raw ingredient cost given away on staff bills, with zero
+  // revenue behind it — a straight expense that reduces net profit.
+  const staffMealExpense = staffBillSales.reduce((sum, sale) => {
+    const saleCost = sale.items.reduce((itemSum, item) => itemSum + (itemCost(item) * item.quantity), 0);
+    return sum + saleCost;
+  }, 0);
+
+  const totalProfit = customerProfit - staffMealExpense;
+
   // Payment Breakdown (split-tender sales are bucketed into their Cash/UPI portions
-  // instead of the raw "Split (Cash: ..., UPI: ...)" string, so cash reconciliation adds up)
+  // instead of the raw "Split (Cash: ..., UPI: ...)" string, so cash reconciliation adds up).
+  // Includes staff bills too — this tracks actual money movement, not revenue.
   const paymentBreakdown = currentPeriodSales.reduce((acc, s) => {
     const isSplit = typeof s.paymentMethod === 'string' && s.paymentMethod.startsWith('Split');
     if (isSplit) {
@@ -290,8 +307,8 @@ export default function Reports({
     return acc;
   }, { Cash: 0, Card: 0, UPI: 0 });
 
-  // Items sold counting
-  const itemsSold = currentPeriodSales.reduce((acc, sale) => {
+  // Items sold counting (customer sales only, so staff meals don't skew "top selling")
+  const itemsSold = customerSales.reduce((acc, sale) => {
     sale.items.forEach(item => {
       acc[item.name] = (acc[item.name] || 0) + item.quantity;
     });
@@ -302,29 +319,22 @@ export default function Reports({
     .sort((a, b) => b[1] - a[1])
     .slice(0, 5);
 
-  // Detailed itemized daily/monthly report calculation
-  const itemizedSales = currentPeriodSales.reduce((acc, sale) => {
+  // Detailed itemized daily/monthly report calculation (customer sales only)
+  const itemizedSales = customerSales.reduce((acc, sale) => {
     sale.items.forEach(item => {
       const existing = acc[item.productId];
       const menuItem = products.find(m => m.id === item.productId);
-      
-      let costPerUnit = 0;
-      if (menuItem && menuItem.inventoryId) {
-        const invItem = inventory.find(inv => inv.id === menuItem.inventoryId);
-        if (invItem) {
-          costPerUnit = (invItem.costPrice || 0) * (menuItem.inventoryQty || 1);
-        }
-      }
-      
-      const totalRevenue = item.price * item.quantity;
-      const totalCost = costPerUnit * item.quantity;
-      const totalProfit = totalRevenue - totalCost;
+      const costPerUnit = itemCost(item);
+
+      const itemRevenue = item.price * item.quantity;
+      const itemCostTotal = costPerUnit * item.quantity;
+      const itemProfit = itemRevenue - itemCostTotal;
 
       if (existing) {
         existing.quantity += item.quantity;
-        existing.revenue += totalRevenue;
-        existing.cost += totalCost;
-        existing.profit += totalProfit;
+        existing.revenue += itemRevenue;
+        existing.cost += itemCostTotal;
+        existing.profit += itemProfit;
       } else {
         acc[item.productId] = {
           productId: item.productId,
@@ -332,9 +342,9 @@ export default function Reports({
           category: menuItem ? menuItem.category : 'N/A',
           price: item.price,
           quantity: item.quantity,
-          revenue: totalRevenue,
-          cost: totalCost,
-          profit: totalProfit
+          revenue: itemRevenue,
+          cost: itemCostTotal,
+          profit: itemProfit
         };
       }
     });
@@ -460,7 +470,7 @@ export default function Reports({
       return;
     }
 
-    let csvContent = 'Transaction ID,Date,Table,Items,Subtotal (INR),Discount %,Tax Type,Tax Rate %,Tax Amount (INR),CGST (INR),SGST (INR),VAT (INR),Total (INR),Payment Method,Cashier\n';
+    let csvContent = 'Transaction ID,Date,Table,Items,Subtotal (INR),Discount %,Tax Type,Tax Rate %,Tax Amount (INR),CGST (INR),SGST (INR),VAT (INR),Total (INR),Payment Method,Cashier,Bill Type,Staff Name\n';
     currentPeriodSales.forEach(s => {
       const itemSummary = s.items.map(i => `${i.name} (${i.quantity}x)`).join('; ');
       
@@ -487,7 +497,7 @@ export default function Reports({
         }
       }
       
-      csvContent += `${s.id},"${new Date(s.timestamp).toLocaleString()}",${s.tableName},"${itemSummary}",${s.subtotal},${s.discount},${s.taxType || 'N/A'},${taxRate},${taxAmt.toFixed(2)},${cgst.toFixed(2)},${sgst.toFixed(2)},${vat.toFixed(2)},${s.total.toFixed(2)},${s.paymentMethod},"${s.cashier || 'Admin'}"\n`;
+      csvContent += `${s.id},"${new Date(s.timestamp).toLocaleString()}",${s.tableName},"${itemSummary}",${s.subtotal},${s.discount},${s.taxType || 'N/A'},${taxRate},${taxAmt.toFixed(2)},${cgst.toFixed(2)},${sgst.toFixed(2)},${vat.toFixed(2)},${s.total.toFixed(2)},${s.paymentMethod},"${s.cashier || 'Admin'}",${s.isStaffBill ? 'Staff' : 'Customer'},"${s.isStaffBill ? (s.staffName || 'Staff') : ''}"\n`;
     });
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -546,12 +556,16 @@ export default function Reports({
             <th>Gross Revenue (₹)</th>
             <th>Estimated Net Profit (₹)</th>
             <th>Average Ticket (₹)</th>
+            <th>Staff Meal Expense (₹)</th>
+            <th>Staff Bills</th>
           </tr>
           <tr>
             <td>${totalSalesCount}</td>
             <td>${totalRevenue.toFixed(2)}</td>
             <td>${totalProfit.toFixed(2)}</td>
             <td>${totalSalesCount > 0 ? (totalRevenue / totalSalesCount).toFixed(2) : '0.00'}</td>
+            <td>${staffMealExpense.toFixed(2)}</td>
+            <td>${staffBillSales.length}</td>
           </tr>
         </table>
         
@@ -604,11 +618,13 @@ export default function Reports({
               <th>Total (₹)</th>
               <th>Payment Method</th>
               <th>Cashier</th>
+              <th>Bill Type</th>
+              <th>Staff Name</th>
             </tr>
           </thead>
           <tbody>
     `;
-    
+
     currentPeriodSales.forEach(s => {
       const itemSummary = s.items.map(i => `${i.name} (${i.quantity}x)`).join('; ');
       const taxRate = s.taxRate || s.tax || 0;
@@ -626,6 +642,8 @@ export default function Reports({
           <td class="number">${s.total.toFixed(2)}</td>
           <td>${escapeHtml(s.paymentMethod)}</td>
           <td>${escapeHtml(s.cashier || 'Admin')}</td>
+          <td>${s.isStaffBill ? 'Staff' : 'Customer'}</td>
+          <td>${escapeHtml(s.isStaffBill ? (s.staffName || 'Staff') : '')}</td>
         </tr>
       `;
     });
@@ -924,6 +942,17 @@ export default function Reports({
             <PieChart size={24} />
           </div>
         </div>
+
+        <div className="glass-panel stat-card">
+          <div className="stat-info">
+            <h3>Staff Meal Expense</h3>
+            <p style={{ color: 'var(--accent-amber)' }}>₹{staffMealExpense.toFixed(2)}</p>
+            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{staffBillSales.length} staff bill{staffBillSales.length === 1 ? '' : 's'}</span>
+          </div>
+          <div className="stat-icon amber">
+            <Users size={24} />
+          </div>
+        </div>
       </div>
 
       {/* Graphical Insights */}
@@ -1060,6 +1089,7 @@ export default function Reports({
                   <tr>
                     <th>Txn ID</th>
                     <th>Table</th>
+                    <th>Type</th>
                     <th>Method</th>
                     <th>Cashier</th>
                     <th style={{ textAlign: 'right' }}>Total (₹)</th>
@@ -1075,6 +1105,15 @@ export default function Reports({
                     <tr key={sale.id} onClick={() => { setReceiptData(sale); setShowReceiptModal(true); }} style={{ cursor: 'pointer' }} title="Click to view full receipt">
                       <td style={{ fontWeight: '500' }}>{sale.id}</td>
                       <td>{sale.tableName}</td>
+                      <td>
+                        {sale.isStaffBill ? (
+                          <span className="badge badge-amber" title={sale.staffName ? `Staff: ${sale.staffName}` : 'Staff bill'}>
+                            🧑‍🍳 {sale.staffName || 'Staff'}
+                          </span>
+                        ) : (
+                          <span className="badge badge-muted" style={{ textTransform: 'none' }}>Customer</span>
+                        )}
+                      </td>
                       <td>
                         <span
                           className={`badge ${isSplit ? 'badge-indigo' : sale.paymentMethod.startsWith('Cash') ? 'badge-teal' : sale.paymentMethod.includes('UPI') || sale.paymentMethod.includes('GPay') ? 'badge-emerald' : 'badge-indigo'}`}
@@ -1354,8 +1393,11 @@ export default function Reports({
                   <p>Bill ID: {receiptData.id}</p>
                   <p>Table: {receiptData.tableName}</p>
                   <p>Server: {receiptData.server_name || 'System'} | Cashier: {receiptData.cashier || 'Admin'}</p>
+                  {receiptData.isStaffBill && (
+                    <p style={{ fontWeight: 700 }}>🧑‍🍳 STAFF BILL — {receiptData.staffName || 'Staff'}</p>
+                  )}
                 </div>
-                
+
                 <div className="receipt-items">
                   {receiptData.items.map((item, idx) => (
                     <div key={idx} className="receipt-item-row">
@@ -1447,7 +1489,8 @@ export default function Reports({
                       }
                       
                       const storeName = restaurantName || 'PortablePOS';
-                      const message = `*--- ${storeName.toUpperCase()} E-BILL ---*\n*Bill ID:* ${receiptData.id}\n*Date:* ${new Date(receiptData.timestamp).toLocaleDateString()}\n*Time:* ${new Date(receiptData.timestamp).toLocaleTimeString()}\n*Table:* ${receiptData.tableName}\n-------------------------------------\n${itemsText}\n-------------------------------------\n*Subtotal:* ₹${receiptData.subtotal.toFixed(2)}\n${discountText}${taxText}*Grand Total:* ₹${receiptData.total.toFixed(2)}\n*Payment:* ${formatPaymentDisplay(receiptData)}\n*Server:* ${receiptData.server_name || 'System'}\n*Cashier:* ${receiptData.cashier || 'Admin'}\n-------------------------------------\nThank you for your visit!\nPowered by ${storeName}.`;
+                      const staffBillLine = receiptData.isStaffBill ? `*STAFF BILL:* ${receiptData.staffName || 'Staff'}\n` : '';
+                      const message = `*--- ${storeName.toUpperCase()} E-BILL ---*\n*Bill ID:* ${receiptData.id}\n*Date:* ${new Date(receiptData.timestamp).toLocaleDateString()}\n*Time:* ${new Date(receiptData.timestamp).toLocaleTimeString()}\n*Table:* ${receiptData.tableName}\n-------------------------------------\n${itemsText}\n-------------------------------------\n*Subtotal:* ₹${receiptData.subtotal.toFixed(2)}\n${discountText}${taxText}*Grand Total:* ₹${receiptData.total.toFixed(2)}\n*Payment:* ${formatPaymentDisplay(receiptData)}\n*Server:* ${receiptData.server_name || 'System'}\n*Cashier:* ${receiptData.cashier || 'Admin'}\n${staffBillLine}-------------------------------------\nThank you for your visit!\nPowered by ${storeName}.`;
 
                       const url = `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(message)}`;
                       window.open(url, '_blank');
