@@ -107,7 +107,7 @@ CREATE TABLE public.sales (
     tax_breakdown JSONB,
     total NUMERIC NOT NULL DEFAULT 0,
     amount_paid NUMERIC DEFAULT 0,
-    payment_method TEXT NOT NULL CONSTRAINT chk_payment CHECK (payment_method IN ('Cash', 'UPI', 'Card', 'Split (Cash + UPI)')),
+    payment_method TEXT NOT NULL CONSTRAINT chk_payment CHECK (payment_method IN ('Cash', 'UPI', 'Card', 'Split (Cash + UPI)', 'Staff')),
     cash_amount NUMERIC DEFAULT 0,
     upi_amount NUMERIC DEFAULT 0,
     cashier TEXT,
@@ -217,6 +217,15 @@ ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS staff_note TEXT;
 - `staff_id`/`staff_name` identify which employee it was billed to (denormalized at checkout time, so the label survives even if that employee is later renamed or removed from the roster).
 - `staff_note` is a free-text internal note (e.g. "end of shift meal", "compensation for extra hours") kept alongside the staff bill for record-keeping.
 - Existing rows default to `is_staff_bill = false`, so nothing already in your sales history is reclassified.
+
+### Existing project? Run this if staff bills fail to save with `violates check constraint "chk_payment"`
+
+Staff bills no longer ask for a payment method at all (no real payment is collected — the whole point is that it's tracked as an expense, not revenue), so the app writes the literal `'Staff'` into `payment_method` for them. If your `chk_payment` constraint was set up before this, it'll reject that value. Run this once to add it:
+
+```sql
+ALTER TABLE public.sales DROP CONSTRAINT IF EXISTS chk_payment;
+ALTER TABLE public.sales ADD CONSTRAINT chk_payment CHECK (payment_method IN ('Cash', 'UPI', 'Card', 'Split (Cash + UPI)', 'Staff'));
+```
 
 ---
 

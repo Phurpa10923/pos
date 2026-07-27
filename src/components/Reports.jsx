@@ -28,6 +28,7 @@ function getSplitAmounts(sale) {
 // payment_method only ever holds the plain mode ('Cash'/'UPI'/'Card'/'Split (Cash + UPI)') —
 // expand it with the actual cash/UPI amounts for display purposes (receipt, WhatsApp e-bill).
 function formatPaymentDisplay(sale) {
+  if (sale.paymentMethod === 'Staff') return 'No Payment (Staff Expense)';
   if (typeof sale.paymentMethod !== 'string' || !sale.paymentMethod.startsWith('Split')) return sale.paymentMethod;
   const { cash, upi } = getSplitAmounts(sale);
   return `Split - Cash ₹${cash.toFixed(2)} + UPI ₹${upi.toFixed(2)}`;
@@ -298,8 +299,9 @@ export default function Reports({
 
   // Payment Breakdown (split-tender sales are bucketed into their Cash/UPI portions
   // instead of the raw "Split (Cash: ..., UPI: ...)" string, so cash reconciliation adds up).
-  // Includes staff bills too — this tracks actual money movement, not revenue.
-  const paymentBreakdown = currentPeriodSales.reduce((acc, s) => {
+  // Customer sales only — staff bills collect no real payment, so they'd otherwise show
+  // up as a phantom "Staff" tender type here.
+  const paymentBreakdown = customerSales.reduce((acc, s) => {
     const isSplit = typeof s.paymentMethod === 'string' && s.paymentMethod.startsWith('Split');
     if (isSplit) {
       const { cash, upi } = getSplitAmounts(s);
@@ -747,7 +749,9 @@ export default function Reports({
     setEditDiscount(receiptData.discount || 0);
     setEditTaxType(receiptData.taxType || 'NONE');
     const isSplit = typeof receiptData.paymentMethod === 'string' && receiptData.paymentMethod.startsWith('Split');
-    setEditPaymentMethod(isSplit ? 'Split' : (receiptData.paymentMethod || 'Cash'));
+    // 'Staff' isn't a selectable Payment Method option — fall back to 'Cash' so the
+    // dropdown has a valid value if the user unchecks Staff Bill during this edit.
+    setEditPaymentMethod(isSplit ? 'Split' : (receiptData.paymentMethod === 'Staff' ? 'Cash' : (receiptData.paymentMethod || 'Cash')));
     setEditSplitCashAmount(isSplit ? getSplitAmounts(receiptData).cash : 0);
     setEditIsStaffBill(!!receiptData.isStaffBill);
     setEditStaffMemberId(receiptData.staffId || '');
@@ -816,11 +820,13 @@ export default function Reports({
     setIsSavingEdit(true);
     try {
       const isSplit = editPaymentMethod === 'Split';
-      const finalCashAmount = isSplit ? editCashAmount : (editPaymentMethod === 'Cash' ? editTotal : 0);
-      const finalUpiAmount = isSplit ? editUpiAmount : (editPaymentMethod === 'UPI' ? editTotal : 0);
-      // DB constraint chk_payment only allows this exact literal for split-tender; the
-      // actual cash/UPI amounts are carried separately in cashAmount/upiAmount above.
-      const finalPaymentMethod = isSplit ? 'Split (Cash + UPI)' : editPaymentMethod;
+      const finalCashAmount = editIsStaffBill ? 0 : (isSplit ? editCashAmount : (editPaymentMethod === 'Cash' ? editTotal : 0));
+      const finalUpiAmount = editIsStaffBill ? 0 : (isSplit ? editUpiAmount : (editPaymentMethod === 'UPI' ? editTotal : 0));
+      // Staff bills collect no real payment — 'Staff' is a distinct chk_payment value so
+      // they never get counted into the Cash/UPI/Card payment breakdown. DB constraint
+      // chk_payment only allows this exact literal for split-tender; the actual cash/UPI
+      // amounts are carried separately in cashAmount/upiAmount above.
+      const finalPaymentMethod = editIsStaffBill ? 'Staff' : (isSplit ? 'Split (Cash + UPI)' : editPaymentMethod);
 
       const updatedSale = {
         ...receiptData,
@@ -1134,16 +1140,22 @@ export default function Reports({
                         )}
                       </td>
                       <td>
-                        <span
-                          className={`badge ${isSplit ? 'badge-indigo' : sale.paymentMethod.startsWith('Cash') ? 'badge-teal' : sale.paymentMethod.includes('UPI') || sale.paymentMethod.includes('GPay') ? 'badge-emerald' : 'badge-indigo'}`}
-                          title={isSplit ? `Cash ₹${splitCash.toFixed(2)} + UPI ₹${splitUpi.toFixed(2)}` : sale.paymentMethod}
-                        >
-                          {isSplit ? 'Split' : (sale.paymentMethod.length > 10 ? sale.paymentMethod.split(' ')[0] : sale.paymentMethod)}
-                        </span>
-                        {isSplit && (
-                          <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px', whiteSpace: 'nowrap' }}>
-                            ₹{splitCash.toFixed(2)} cash + ₹{splitUpi.toFixed(2)} upi
-                          </div>
+                        {sale.paymentMethod === 'Staff' ? (
+                          <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>No payment</span>
+                        ) : (
+                          <>
+                            <span
+                              className={`badge ${isSplit ? 'badge-indigo' : sale.paymentMethod.startsWith('Cash') ? 'badge-teal' : sale.paymentMethod.includes('UPI') || sale.paymentMethod.includes('GPay') ? 'badge-emerald' : 'badge-indigo'}`}
+                              title={isSplit ? `Cash ₹${splitCash.toFixed(2)} + UPI ₹${splitUpi.toFixed(2)}` : sale.paymentMethod}
+                            >
+                              {isSplit ? 'Split' : (sale.paymentMethod.length > 10 ? sale.paymentMethod.split(' ')[0] : sale.paymentMethod)}
+                            </span>
+                            {isSplit && (
+                              <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px', whiteSpace: 'nowrap' }}>
+                                ₹{splitCash.toFixed(2)} cash + ₹{splitUpi.toFixed(2)} upi
+                              </div>
+                            )}
+                          </>
                         )}
                       </td>
                       <td>
@@ -1298,65 +1310,6 @@ export default function Reports({
                   </div>
                 </div>
 
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label>Payment Method</label>
-                  <select
-                    className="input-field select-field"
-                    value={editPaymentMethod}
-                    onChange={(e) => {
-                      setEditPaymentMethod(e.target.value);
-                      if (e.target.value === 'Split') {
-                        setEditSplitCashAmount(editTotal);
-                      }
-                    }}
-                  >
-                    <option value="Cash">💵 Cash</option>
-                    <option value="UPI">📱 UPI/Online</option>
-                    <option value="Card">💳 Card</option>
-                    <option value="Split">🔀 Split (Cash + UPI)</option>
-                  </select>
-                </div>
-
-                {editPaymentMethod === 'Split' && (
-                  <div style={{ background: 'rgba(255,255,255,0.01)', padding: '14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                      <div className="form-group" style={{ marginBottom: 0 }}>
-                        <label>Cash Portion (₹)</label>
-                        <input
-                          type="number"
-                          min="0"
-                          max={editTotal}
-                          step="0.01"
-                          className="input-field"
-                          value={editCashAmount}
-                          onChange={(e) => {
-                            const cashVal = Math.max(0, Math.min(editTotal, parseFloat(e.target.value) || 0));
-                            setEditSplitCashAmount(cashVal);
-                          }}
-                        />
-                      </div>
-                      <div className="form-group" style={{ marginBottom: 0 }}>
-                        <label>UPI / GPay Portion (₹)</label>
-                        <input
-                          type="number"
-                          min="0"
-                          max={editTotal}
-                          step="0.01"
-                          className="input-field"
-                          value={editUpiAmount}
-                          onChange={(e) => {
-                            const upiVal = Math.max(0, Math.min(editTotal, parseFloat(e.target.value) || 0));
-                            setEditSplitCashAmount(Number((editTotal - upiVal).toFixed(2)));
-                          }}
-                        />
-                      </div>
-                    </div>
-                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                      Split: ₹{editCashAmount.toFixed(2)} (Cash) + ₹{editUpiAmount.toFixed(2)} (UPI) = ₹{editTotal.toFixed(2)}
-                    </span>
-                  </div>
-                )}
-
                 <div style={{ background: 'rgba(255,255,255,0.01)', padding: '14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
                     <input
@@ -1398,9 +1351,75 @@ export default function Reports({
                           style={{ resize: 'vertical', minHeight: '54px' }}
                         />
                       </div>
+                      <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                        No payment is collected for staff bills — this amount is tracked purely as a business expense.
+                      </span>
                     </>
                   )}
                 </div>
+
+                {!editIsStaffBill && (
+                  <>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label>Payment Method</label>
+                      <select
+                        className="input-field select-field"
+                        value={editPaymentMethod}
+                        onChange={(e) => {
+                          setEditPaymentMethod(e.target.value);
+                          if (e.target.value === 'Split') {
+                            setEditSplitCashAmount(editTotal);
+                          }
+                        }}
+                      >
+                        <option value="Cash">💵 Cash</option>
+                        <option value="UPI">📱 UPI/Online</option>
+                        <option value="Card">💳 Card</option>
+                        <option value="Split">🔀 Split (Cash + UPI)</option>
+                      </select>
+                    </div>
+
+                    {editPaymentMethod === 'Split' && (
+                      <div style={{ background: 'rgba(255,255,255,0.01)', padding: '14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                          <div className="form-group" style={{ marginBottom: 0 }}>
+                            <label>Cash Portion (₹)</label>
+                            <input
+                              type="number"
+                              min="0"
+                              max={editTotal}
+                              step="0.01"
+                              className="input-field"
+                              value={editCashAmount}
+                              onChange={(e) => {
+                                const cashVal = Math.max(0, Math.min(editTotal, parseFloat(e.target.value) || 0));
+                                setEditSplitCashAmount(cashVal);
+                              }}
+                            />
+                          </div>
+                          <div className="form-group" style={{ marginBottom: 0 }}>
+                            <label>UPI / GPay Portion (₹)</label>
+                            <input
+                              type="number"
+                              min="0"
+                              max={editTotal}
+                              step="0.01"
+                              className="input-field"
+                              value={editUpiAmount}
+                              onChange={(e) => {
+                                const upiVal = Math.max(0, Math.min(editTotal, parseFloat(e.target.value) || 0));
+                                setEditSplitCashAmount(Number((editTotal - upiVal).toFixed(2)));
+                              }}
+                            />
+                          </div>
+                        </div>
+                        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                          Split: ₹{editCashAmount.toFixed(2)} (Cash) + ₹{editUpiAmount.toFixed(2)} (UPI) = ₹{editTotal.toFixed(2)}
+                        </span>
+                      </div>
+                    )}
+                  </>
+                )}
 
                 <div className="receipt-totals">
                   <div className="receipt-total-row">

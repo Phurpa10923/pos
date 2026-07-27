@@ -5,6 +5,7 @@ import { getTaxDetails } from '../taxUtils';
 // payment_method only ever holds the plain mode ('Cash'/'UPI'/'Card'/'Split (Cash + UPI)') —
 // the actual split breakdown lives in cashAmount/upiAmount, so build the display string here.
 function formatPaymentDisplay(sale) {
+  if (sale.paymentMethod === 'Staff') return 'No Payment (Staff Expense)';
   if (sale.paymentMethod !== 'Split (Cash + UPI)') return sale.paymentMethod;
   return `Split - Cash ₹${(sale.cashAmount || 0).toFixed(2)} + UPI ₹${(sale.upiAmount || 0).toFixed(2)}`;
 }
@@ -306,11 +307,13 @@ export default function TablePOS({
 
     // 2. Create Sale Record (tracking active cashier user)
     const saleId = `TXN-${Date.now().toString().slice(-6)}`;
-    // DB constraint chk_payment only allows this exact literal for split-tender; the
-    // actual cash/UPI amounts are carried separately in cashAmount/upiAmount below.
-    const finalPaymentMethod = paymentMethod === 'Split' ? 'Split (Cash + UPI)' : paymentMethod;
-    const finalCashAmount = paymentMethod === 'Split' ? splitCashAmount : (paymentMethod === 'Cash' ? finalTotal : 0);
-    const finalUpiAmount = paymentMethod === 'Split' ? splitUpiAmount : (paymentMethod === 'UPI' ? finalTotal : 0);
+    // Staff bills collect no real payment — 'Staff' is a distinct chk_payment value so
+    // they never get counted into the Cash/UPI/Card payment breakdown. DB constraint
+    // chk_payment only allows this exact literal for split-tender; the actual cash/UPI
+    // amounts are carried separately in cashAmount/upiAmount below.
+    const finalPaymentMethod = isStaffBill ? 'Staff' : (paymentMethod === 'Split' ? 'Split (Cash + UPI)' : paymentMethod);
+    const finalCashAmount = isStaffBill ? 0 : (paymentMethod === 'Split' ? splitCashAmount : (paymentMethod === 'Cash' ? finalTotal : 0));
+    const finalUpiAmount = isStaffBill ? 0 : (paymentMethod === 'Split' ? splitUpiAmount : (paymentMethod === 'UPI' ? finalTotal : 0));
 
     const newSale = {
       id: saleId,
@@ -887,68 +890,6 @@ export default function TablePOS({
                 </div>
               </div>
 
-              <div className="form-group">
-                <label>Payment Method</label>
-                <select 
-                  className="input-field select-field" 
-                  value={paymentMethod}
-                  onChange={(e) => {
-                    setPaymentMethod(e.target.value);
-                    if (e.target.value === 'Split') {
-                      setSplitCashAmount(finalTotal);
-                      setSplitUpiAmount(0);
-                    }
-                  }}
-                >
-                  <option value="Cash">💵 Cash</option>
-                  <option value="UPI">📱 UPI/Online</option>
-                  <option value="Card">💳 Card</option>
-                  <option value="Split">🔀 Split (Cash + UPI)</option>
-                </select>
-              </div>
-
-              {paymentMethod === 'Split' && (
-                <div style={{ background: 'rgba(255,255,255,0.01)', padding: '14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                    <div className="form-group">
-                      <label>Cash Portion (₹)</label>
-                      <input
-                        type="number"
-                        min="0"
-                        max={finalTotal}
-                        step="0.01"
-                        className="input-field"
-                        value={splitCashAmount}
-                        onChange={(e) => {
-                          const cashVal = Math.max(0, Math.min(finalTotal, parseFloat(e.target.value) || 0));
-                          setSplitCashAmount(cashVal);
-                          setSplitUpiAmount(Number((finalTotal - cashVal).toFixed(2)));
-                        }}
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label>UPI / GPay Portion (₹)</label>
-                      <input
-                        type="number"
-                        min="0"
-                        max={finalTotal}
-                        step="0.01"
-                        className="input-field"
-                        value={splitUpiAmount}
-                        onChange={(e) => {
-                          const upiVal = Math.max(0, Math.min(finalTotal, parseFloat(e.target.value) || 0));
-                          setSplitUpiAmount(upiVal);
-                          setSplitCashAmount(Number((finalTotal - upiVal).toFixed(2)));
-                        }}
-                      />
-                    </div>
-                  </div>
-                  <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                    Split: ₹{splitCashAmount.toFixed(2)} (Cash) + ₹{splitUpiAmount.toFixed(2)} (UPI) = ₹{finalTotal.toFixed(2)}
-                  </span>
-                </div>
-              )}
-
               <div style={{ background: 'rgba(255,255,255,0.01)', padding: '14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
                   <input
@@ -990,9 +931,78 @@ export default function TablePOS({
                         style={{ resize: 'vertical', minHeight: '54px' }}
                       />
                     </div>
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                      No payment is collected for staff bills — this amount is tracked purely as a business expense.
+                    </span>
                   </>
                 )}
               </div>
+
+              {!isStaffBill && (
+                <>
+                  <div className="form-group">
+                    <label>Payment Method</label>
+                    <select
+                      className="input-field select-field"
+                      value={paymentMethod}
+                      onChange={(e) => {
+                        setPaymentMethod(e.target.value);
+                        if (e.target.value === 'Split') {
+                          setSplitCashAmount(finalTotal);
+                          setSplitUpiAmount(0);
+                        }
+                      }}
+                    >
+                      <option value="Cash">💵 Cash</option>
+                      <option value="UPI">📱 UPI/Online</option>
+                      <option value="Card">💳 Card</option>
+                      <option value="Split">🔀 Split (Cash + UPI)</option>
+                    </select>
+                  </div>
+
+                  {paymentMethod === 'Split' && (
+                    <div style={{ background: 'rgba(255,255,255,0.01)', padding: '14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                        <div className="form-group">
+                          <label>Cash Portion (₹)</label>
+                          <input
+                            type="number"
+                            min="0"
+                            max={finalTotal}
+                            step="0.01"
+                            className="input-field"
+                            value={splitCashAmount}
+                            onChange={(e) => {
+                              const cashVal = Math.max(0, Math.min(finalTotal, parseFloat(e.target.value) || 0));
+                              setSplitCashAmount(cashVal);
+                              setSplitUpiAmount(Number((finalTotal - cashVal).toFixed(2)));
+                            }}
+                          />
+                        </div>
+                        <div className="form-group">
+                          <label>UPI / GPay Portion (₹)</label>
+                          <input
+                            type="number"
+                            min="0"
+                            max={finalTotal}
+                            step="0.01"
+                            className="input-field"
+                            value={splitUpiAmount}
+                            onChange={(e) => {
+                              const upiVal = Math.max(0, Math.min(finalTotal, parseFloat(e.target.value) || 0));
+                              setSplitUpiAmount(upiVal);
+                              setSplitCashAmount(Number((finalTotal - upiVal).toFixed(2)));
+                            }}
+                          />
+                        </div>
+                      </div>
+                      <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                        Split: ₹{splitCashAmount.toFixed(2)} (Cash) + ₹{splitUpiAmount.toFixed(2)} (UPI) = ₹{finalTotal.toFixed(2)}
+                      </span>
+                    </div>
+                  )}
+                </>
+              )}
 
               <div className="form-group">
                 <label>WhatsApp Number (Optional)</label>
