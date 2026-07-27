@@ -935,6 +935,7 @@ export default function App() {
               products={menu} // Profit calculates based on menu items sold
               inventory={inventory}
               attendance={attendance}
+              employees={employees}
               addToast={addToast}
               onSeedSales={handleSeedSales}
               onEditSale={handleEditSale}

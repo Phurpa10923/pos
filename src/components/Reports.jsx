@@ -38,6 +38,7 @@ export default function Reports({
   products = [],
   inventory = [],
   attendance = [],
+  employees = [],
   addToast,
   onSeedSales,
   onEditSale,
@@ -63,6 +64,8 @@ export default function Reports({
   const [editTaxType, setEditTaxType] = useState('GST_5');
   const [editPaymentMethod, setEditPaymentMethod] = useState('Cash');
   const [editSplitCashAmount, setEditSplitCashAmount] = useState(0);
+  const [editIsStaffBill, setEditIsStaffBill] = useState(false);
+  const [editStaffMemberId, setEditStaffMemberId] = useState('');
   const [addItemProductId, setAddItemProductId] = useState('');
   const [settleBalanceNow, setSettleBalanceNow] = useState(false);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
@@ -742,6 +745,8 @@ export default function Reports({
     const isSplit = typeof receiptData.paymentMethod === 'string' && receiptData.paymentMethod.startsWith('Split');
     setEditPaymentMethod(isSplit ? 'Split' : (receiptData.paymentMethod || 'Cash'));
     setEditSplitCashAmount(isSplit ? getSplitAmounts(receiptData).cash : 0);
+    setEditIsStaffBill(!!receiptData.isStaffBill);
+    setEditStaffMemberId(receiptData.staffId || '');
     setAddItemProductId('');
     setSettleBalanceNow(false);
     setIsEditingBill(true);
@@ -798,6 +803,11 @@ export default function Reports({
       addToast('A bill must have at least one item', 'warning');
       return;
     }
+    const editStaffMember = editIsStaffBill ? employees.find(e => e.id === editStaffMemberId) : null;
+    if (editIsStaffBill && !editStaffMember) {
+      addToast('Select which staff member this bill is for.', 'warning');
+      return;
+    }
     setIsSavingEdit(true);
     try {
       const isSplit = editPaymentMethod === 'Split';
@@ -820,6 +830,9 @@ export default function Reports({
         amountPaid: settleBalanceNow ? editTotal : originalAmountPaid,
         paymentMethod: finalPaymentMethod,
         cashAmount: finalCashAmount,
+        isStaffBill: editIsStaffBill,
+        staffId: editStaffMember ? editStaffMember.id : null,
+        staffName: editStaffMember ? editStaffMember.name : null,
         upiAmount: finalUpiAmount
       };
       const success = await onEditSale(receiptData, updatedSale);
@@ -1102,7 +1115,7 @@ export default function Reports({
                     const isSplit = sale.paymentMethod.startsWith('Split');
                     const { cash: splitCash, upi: splitUpi } = isSplit ? getSplitAmounts(sale) : { cash: 0, upi: 0 };
                     return (
-                    <tr key={sale.id} onClick={() => { setReceiptData(sale); setShowReceiptModal(true); }} style={{ cursor: 'pointer' }} title="Click to view full receipt">
+                    <tr key={sale.id} onClick={() => { setReceiptData(sale); setIsEditingBill(false); setShowReceiptModal(true); }} style={{ cursor: 'pointer' }} title="Click to view full receipt">
                       <td style={{ fontWeight: '500' }}>{sale.id}</td>
                       <td>{sale.tableName}</td>
                       <td>
@@ -1208,7 +1221,7 @@ export default function Reports({
                     <Pencil size={14} /> Edit Bill
                   </button>
                 )}
-                <button className="close-btn" onClick={() => setShowReceiptModal(false)}>×</button>
+                <button className="close-btn" onClick={() => { setShowReceiptModal(false); setIsEditingBill(false); }}>×</button>
               </div>
             </div>
             {isEditingBill ? (
@@ -1337,6 +1350,35 @@ export default function Reports({
                     </span>
                   </div>
                 )}
+
+                <div style={{ background: 'rgba(255,255,255,0.01)', padding: '14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={editIsStaffBill}
+                      onChange={(e) => {
+                        setEditIsStaffBill(e.target.checked);
+                        if (!e.target.checked) setEditStaffMemberId('');
+                      }}
+                    />
+                    🧑‍🍳 Staff Bill (internal — no profit, tracked as expense)
+                  </label>
+                  {editIsStaffBill && (
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label>Staff Member</label>
+                      <select
+                        className="input-field select-field"
+                        value={editStaffMemberId}
+                        onChange={(e) => setEditStaffMemberId(e.target.value)}
+                      >
+                        <option value="">Select employee...</option>
+                        {employees.map(emp => (
+                          <option key={emp.id} value={emp.id}>{emp.name} — {emp.role}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
 
                 <div className="receipt-totals">
                   <div className="receipt-total-row">
