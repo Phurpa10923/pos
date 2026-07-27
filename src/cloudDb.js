@@ -65,6 +65,7 @@ function toSnakeCase(item, tableName) {
     if ('isStaffBill' in converted) { converted.is_staff_bill = Boolean(converted.isStaffBill); delete converted.isStaffBill; }
     if ('staffId' in converted) { converted.staff_id = converted.staffId; delete converted.staffId; }
     if ('staffName' in converted) { converted.staff_name = converted.staffName; delete converted.staffName; }
+    if ('staffNote' in converted) { converted.staff_note = converted.staffNote; delete converted.staffNote; }
   }
 
   if (tableName === 'attendance') {
@@ -122,6 +123,7 @@ function toCamelCase(item, tableName) {
     if ('is_staff_bill' in converted) { converted.isStaffBill = Boolean(converted.is_staff_bill); delete converted.is_staff_bill; }
     if ('staff_id' in converted) { converted.staffId = converted.staff_id; delete converted.staff_id; }
     if ('staff_name' in converted) { converted.staffName = converted.staff_name; delete converted.staff_name; }
+    if ('staff_note' in converted) { converted.staffNote = converted.staff_note; delete converted.staff_note; }
   }
 
   if (tableName === 'attendance') {

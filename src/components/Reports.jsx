@@ -61,11 +61,12 @@ export default function Reports({
   const [isEditingBill, setIsEditingBill] = useState(false);
   const [editItems, setEditItems] = useState([]);
   const [editDiscount, setEditDiscount] = useState(0);
-  const [editTaxType, setEditTaxType] = useState('GST_5');
+  const [editTaxType, setEditTaxType] = useState('NONE');
   const [editPaymentMethod, setEditPaymentMethod] = useState('Cash');
   const [editSplitCashAmount, setEditSplitCashAmount] = useState(0);
   const [editIsStaffBill, setEditIsStaffBill] = useState(false);
   const [editStaffMemberId, setEditStaffMemberId] = useState('');
+  const [editStaffNote, setEditStaffNote] = useState('');
   const [addItemProductId, setAddItemProductId] = useState('');
   const [settleBalanceNow, setSettleBalanceNow] = useState(false);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
@@ -473,7 +474,7 @@ export default function Reports({
       return;
     }
 
-    let csvContent = 'Transaction ID,Date,Table,Items,Subtotal (INR),Discount %,Tax Type,Tax Rate %,Tax Amount (INR),CGST (INR),SGST (INR),VAT (INR),Total (INR),Payment Method,Cashier,Bill Type,Staff Name\n';
+    let csvContent = 'Transaction ID,Date,Table,Items,Subtotal (INR),Discount %,Tax Type,Tax Rate %,Tax Amount (INR),CGST (INR),SGST (INR),VAT (INR),Total (INR),Payment Method,Cashier,Bill Type,Staff Name,Staff Note\n';
     currentPeriodSales.forEach(s => {
       const itemSummary = s.items.map(i => `${i.name} (${i.quantity}x)`).join('; ');
       
@@ -500,7 +501,8 @@ export default function Reports({
         }
       }
       
-      csvContent += `${s.id},"${new Date(s.timestamp).toLocaleString()}",${s.tableName},"${itemSummary}",${s.subtotal},${s.discount},${s.taxType || 'N/A'},${taxRate},${taxAmt.toFixed(2)},${cgst.toFixed(2)},${sgst.toFixed(2)},${vat.toFixed(2)},${s.total.toFixed(2)},${s.paymentMethod},"${s.cashier || 'Admin'}",${s.isStaffBill ? 'Staff' : 'Customer'},"${s.isStaffBill ? (s.staffName || 'Staff') : ''}"\n`;
+      const staffNoteCsv = s.isStaffBill && s.staffNote ? s.staffNote.replace(/"/g, '""') : '';
+      csvContent += `${s.id},"${new Date(s.timestamp).toLocaleString()}",${s.tableName},"${itemSummary}",${s.subtotal},${s.discount},${s.taxType || 'N/A'},${taxRate},${taxAmt.toFixed(2)},${cgst.toFixed(2)},${sgst.toFixed(2)},${vat.toFixed(2)},${s.total.toFixed(2)},${s.paymentMethod},"${s.cashier || 'Admin'}",${s.isStaffBill ? 'Staff' : 'Customer'},"${s.isStaffBill ? (s.staffName || 'Staff') : ''}","${staffNoteCsv}"\n`;
     });
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -623,6 +625,7 @@ export default function Reports({
               <th>Cashier</th>
               <th>Bill Type</th>
               <th>Staff Name</th>
+              <th>Staff Note</th>
             </tr>
           </thead>
           <tbody>
@@ -647,6 +650,7 @@ export default function Reports({
           <td>${escapeHtml(s.cashier || 'Admin')}</td>
           <td>${s.isStaffBill ? 'Staff' : 'Customer'}</td>
           <td>${escapeHtml(s.isStaffBill ? (s.staffName || 'Staff') : '')}</td>
+          <td>${escapeHtml(s.isStaffBill ? (s.staffNote || '') : '')}</td>
         </tr>
       `;
     });
@@ -741,12 +745,13 @@ export default function Reports({
   const handleStartEditBill = () => {
     setEditItems(receiptData.items.map(item => ({ ...item })));
     setEditDiscount(receiptData.discount || 0);
-    setEditTaxType(receiptData.taxType || 'GST_5');
+    setEditTaxType(receiptData.taxType || 'NONE');
     const isSplit = typeof receiptData.paymentMethod === 'string' && receiptData.paymentMethod.startsWith('Split');
     setEditPaymentMethod(isSplit ? 'Split' : (receiptData.paymentMethod || 'Cash'));
     setEditSplitCashAmount(isSplit ? getSplitAmounts(receiptData).cash : 0);
     setEditIsStaffBill(!!receiptData.isStaffBill);
     setEditStaffMemberId(receiptData.staffId || '');
+    setEditStaffNote(receiptData.staffNote || '');
     setAddItemProductId('');
     setSettleBalanceNow(false);
     setIsEditingBill(true);
@@ -833,6 +838,7 @@ export default function Reports({
         isStaffBill: editIsStaffBill,
         staffId: editStaffMember ? editStaffMember.id : null,
         staffName: editStaffMember ? editStaffMember.name : null,
+        staffNote: editIsStaffBill ? (editStaffNote || '') : '',
         upiAmount: finalUpiAmount
       };
       const success = await onEditSale(receiptData, updatedSale);
@@ -1120,7 +1126,7 @@ export default function Reports({
                       <td>{sale.tableName}</td>
                       <td>
                         {sale.isStaffBill ? (
-                          <span className="badge badge-amber" title={sale.staffName ? `Staff: ${sale.staffName}` : 'Staff bill'}>
+                          <span className="badge badge-amber" title={`${sale.staffName ? `Staff: ${sale.staffName}` : 'Staff bill'}${sale.staffNote ? ` — ${sale.staffNote}` : ''}`}>
                             🧑‍🍳 {sale.staffName || 'Staff'}
                           </span>
                         ) : (
@@ -1358,25 +1364,41 @@ export default function Reports({
                       checked={editIsStaffBill}
                       onChange={(e) => {
                         setEditIsStaffBill(e.target.checked);
-                        if (!e.target.checked) setEditStaffMemberId('');
+                        if (!e.target.checked) {
+                          setEditStaffMemberId('');
+                          setEditStaffNote('');
+                        }
                       }}
                     />
                     🧑‍🍳 Staff Bill (internal — no profit, tracked as expense)
                   </label>
                   {editIsStaffBill && (
-                    <div className="form-group" style={{ marginBottom: 0 }}>
-                      <label>Staff Member</label>
-                      <select
-                        className="input-field select-field"
-                        value={editStaffMemberId}
-                        onChange={(e) => setEditStaffMemberId(e.target.value)}
-                      >
-                        <option value="">Select employee...</option>
-                        {employees.map(emp => (
-                          <option key={emp.id} value={emp.id}>{emp.name} — {emp.role}</option>
-                        ))}
-                      </select>
-                    </div>
+                    <>
+                      <div className="form-group" style={{ marginBottom: 0 }}>
+                        <label>Staff Member</label>
+                        <select
+                          className="input-field select-field"
+                          value={editStaffMemberId}
+                          onChange={(e) => setEditStaffMemberId(e.target.value)}
+                        >
+                          <option value="">Select employee...</option>
+                          {employees.map(emp => (
+                            <option key={emp.id} value={emp.id}>{emp.name} — {emp.role}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="form-group" style={{ marginBottom: 0 }}>
+                        <label>Description (Internal Note)</label>
+                        <textarea
+                          className="input-field"
+                          rows={2}
+                          placeholder="e.g. End of shift meal, compensation for extra hours..."
+                          value={editStaffNote}
+                          onChange={(e) => setEditStaffNote(e.target.value)}
+                          style={{ resize: 'vertical', minHeight: '54px' }}
+                        />
+                      </div>
+                    </>
                   )}
                 </div>
 
@@ -1436,7 +1458,10 @@ export default function Reports({
                   <p>Table: {receiptData.tableName}</p>
                   <p>Server: {receiptData.server_name || 'System'} | Cashier: {receiptData.cashier || 'Admin'}</p>
                   {receiptData.isStaffBill && (
-                    <p style={{ fontWeight: 700 }}>🧑‍🍳 STAFF BILL — {receiptData.staffName || 'Staff'}</p>
+                    <>
+                      <p style={{ fontWeight: 700 }}>🧑‍🍳 STAFF BILL — {receiptData.staffName || 'Staff'}</p>
+                      {receiptData.staffNote && <p>Note: {receiptData.staffNote}</p>}
+                    </>
                   )}
                 </div>
 
@@ -1531,7 +1556,9 @@ export default function Reports({
                       }
                       
                       const storeName = restaurantName || 'PortablePOS';
-                      const staffBillLine = receiptData.isStaffBill ? `*STAFF BILL:* ${receiptData.staffName || 'Staff'}\n` : '';
+                      const staffBillLine = receiptData.isStaffBill
+                        ? `*STAFF BILL:* ${receiptData.staffName || 'Staff'}\n${receiptData.staffNote ? `*Note:* ${receiptData.staffNote}\n` : ''}`
+                        : '';
                       const message = `*--- ${storeName.toUpperCase()} E-BILL ---*\n*Bill ID:* ${receiptData.id}\n*Date:* ${new Date(receiptData.timestamp).toLocaleDateString()}\n*Time:* ${new Date(receiptData.timestamp).toLocaleTimeString()}\n*Table:* ${receiptData.tableName}\n-------------------------------------\n${itemsText}\n-------------------------------------\n*Subtotal:* ₹${receiptData.subtotal.toFixed(2)}\n${discountText}${taxText}*Grand Total:* ₹${receiptData.total.toFixed(2)}\n*Payment:* ${formatPaymentDisplay(receiptData)}\n*Server:* ${receiptData.server_name || 'System'}\n*Cashier:* ${receiptData.cashier || 'Admin'}\n${staffBillLine}-------------------------------------\nThank you for your visit!\nPowered by ${storeName}.`;
 
                       const url = `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(message)}`;

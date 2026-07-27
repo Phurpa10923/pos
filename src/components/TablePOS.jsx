@@ -38,7 +38,7 @@ export default function TablePOS({
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState('Cash');
   const [discountPercent, setDiscountPercent] = useState(0);
-  const [taxType, setTaxType] = useState('GST_5'); // 'NONE', 'GST_5', 'GST_12', 'GST_18', 'VAT_10'
+  const [taxType, setTaxType] = useState('NONE'); // 'NONE', 'GST_5', 'GST_12', 'GST_18', 'VAT_10'
   const [whatsappNumber, setWhatsappNumber] = useState('');
   const [splitCashAmount, setSplitCashAmount] = useState(0);
   const [splitUpiAmount, setSplitUpiAmount] = useState(0);
@@ -46,6 +46,7 @@ export default function TablePOS({
   // Reports excludes these from revenue/profit and tracks their cost as an expense instead.
   const [isStaffBill, setIsStaffBill] = useState(false);
   const [staffMemberId, setStaffMemberId] = useState('');
+  const [staffNote, setStaffNote] = useState('');
 
   // Add Table state
   const [showAddTableModal, setShowAddTableModal] = useState(false);
@@ -263,12 +264,13 @@ export default function TablePOS({
     }
 
     setDiscountPercent(activeTable.discount || 0);
-    setTaxType(activeTable.taxType || 'GST_5');
+    setTaxType(activeTable.taxType || 'NONE');
     setPaymentMethod('Cash');
     setSplitCashAmount(0);
     setSplitUpiAmount(0);
     setIsStaffBill(false);
     setStaffMemberId('');
+    setStaffNote('');
     setShowPaymentModal(true);
   };
 
@@ -336,7 +338,8 @@ export default function TablePOS({
       whatsappNumber: whatsappNumber || '',
       isStaffBill,
       staffId: staffMember ? staffMember.id : null,
-      staffName: staffMember ? staffMember.name : null
+      staffName: staffMember ? staffMember.name : null,
+      staffNote: isStaffBill ? (staffNote || '') : ''
     };
 
     // 3. Reset the Table Status
@@ -348,7 +351,7 @@ export default function TablePOS({
           currentOrder: [],
           billTotal: 0,
           discount: 0,
-          taxType: 'GST_5',
+          taxType: 'NONE',
           tax: 0,
           orderedBy: null
         };
@@ -368,6 +371,7 @@ export default function TablePOS({
     setSplitUpiAmount(0);
     setIsStaffBill(false);
     setStaffMemberId('');
+    setStaffNote('');
 
     addToast(`Bill closed for ${activeTable.name}. Transaction saved!`);
   };
@@ -404,7 +408,7 @@ export default function TablePOS({
       
       const width = 400;
       const itemHeight = 25;
-      const headerHeight = data.isStaffBill ? 200 : 180;
+      const headerHeight = 180 + (data.isStaffBill ? 20 : 0) + (data.isStaffBill && data.staffNote ? 20 : 0);
       const footerHeight = 180;
       const height = headerHeight + (data.items.length * itemHeight) + footerHeight;
       
@@ -439,6 +443,10 @@ export default function TablePOS({
         ctx.font = 'bold 12px monospace';
         ctx.fillText(`STAFF BILL: ${data.staffName || 'Staff'}`, 20, y); y += 20;
         ctx.font = '12px monospace';
+        if (data.staffNote) {
+          const noteText = data.staffNote.length > 45 ? `${data.staffNote.slice(0, 45)}…` : data.staffNote;
+          ctx.fillText(`Note: ${noteText}`, 20, y); y += 20;
+        }
       }
 
       ctx.fillText('------------------------------------------', 20, y); y += 20;
@@ -948,25 +956,41 @@ export default function TablePOS({
                     checked={isStaffBill}
                     onChange={(e) => {
                       setIsStaffBill(e.target.checked);
-                      if (!e.target.checked) setStaffMemberId('');
+                      if (!e.target.checked) {
+                        setStaffMemberId('');
+                        setStaffNote('');
+                      }
                     }}
                   />
                   🧑‍🍳 Staff Bill (internal — no profit, tracked as expense)
                 </label>
                 {isStaffBill && (
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label>Staff Member</label>
-                    <select
-                      className="input-field select-field"
-                      value={staffMemberId}
-                      onChange={(e) => setStaffMemberId(e.target.value)}
-                    >
-                      <option value="">Select employee...</option>
-                      {employees.map(emp => (
-                        <option key={emp.id} value={emp.id}>{emp.name} — {emp.role}</option>
-                      ))}
-                    </select>
-                  </div>
+                  <>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label>Staff Member</label>
+                      <select
+                        className="input-field select-field"
+                        value={staffMemberId}
+                        onChange={(e) => setStaffMemberId(e.target.value)}
+                      >
+                        <option value="">Select employee...</option>
+                        {employees.map(emp => (
+                          <option key={emp.id} value={emp.id}>{emp.name} — {emp.role}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label>Description (Internal Note)</label>
+                      <textarea
+                        className="input-field"
+                        rows={2}
+                        placeholder="e.g. End of shift meal, compensation for extra hours..."
+                        value={staffNote}
+                        onChange={(e) => setStaffNote(e.target.value)}
+                        style={{ resize: 'vertical', minHeight: '54px' }}
+                      />
+                    </div>
+                  </>
                 )}
               </div>
 
@@ -1025,7 +1049,10 @@ export default function TablePOS({
                   <p>Table: {receiptData.tableName}</p>
                   <p>Server: {receiptData.server_name || 'System'} | Cashier: {receiptData.cashier || 'Admin'}</p>
                   {receiptData.isStaffBill && (
-                    <p style={{ fontWeight: 700 }}>🧑‍🍳 STAFF BILL — {receiptData.staffName || 'Staff'}</p>
+                    <>
+                      <p style={{ fontWeight: 700 }}>🧑‍🍳 STAFF BILL — {receiptData.staffName || 'Staff'}</p>
+                      {receiptData.staffNote && <p>Note: {receiptData.staffNote}</p>}
+                    </>
                   )}
                 </div>
 
@@ -1108,7 +1135,9 @@ export default function TablePOS({
                         taxText = `Tax (${receiptData.tax}%): ₹${(((receiptData.subtotal - (receiptData.subtotal * receiptData.discount) / 100) * receiptData.tax) / 100).toFixed(2)}\n`;
                       }
                       const storeName = restaurantName || 'PortablePOS';
-                      const staffBillLine = receiptData.isStaffBill ? `*STAFF BILL:* ${receiptData.staffName || 'Staff'}\n` : '';
+                      const staffBillLine = receiptData.isStaffBill
+                        ? `*STAFF BILL:* ${receiptData.staffName || 'Staff'}\n${receiptData.staffNote ? `*Note:* ${receiptData.staffNote}\n` : ''}`
+                        : '';
                       const message = `*--- ${storeName.toUpperCase()} E-BILL ---*\n*Bill ID:* ${receiptData.id}\n*Date:* ${new Date(receiptData.timestamp).toLocaleDateString()}\n*Time:* ${new Date(receiptData.timestamp).toLocaleTimeString()}\n*Table:* ${receiptData.tableName}\n-------------------------------------\n${itemsText}\n-------------------------------------\n*Subtotal:* ₹${receiptData.subtotal.toFixed(2)}\n${discountText}${taxText}*Grand Total:* ₹${receiptData.total.toFixed(2)}\n*Payment:* ${formatPaymentDisplay(receiptData)}\n*Server:* ${receiptData.server_name || 'System'}\n*Cashier:* ${receiptData.cashier || 'Admin'}\n${staffBillLine}-------------------------------------\nThank you for your visit!\nPowered by ${storeName}.`;
 
                       const url = `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(message)}`;
