@@ -1,5 +1,8 @@
 import React, { useState } from 'react';
 import { Search, Plus, Trash2, Edit2, RotateCcw, Link2 } from 'lucide-react';
+import { getMenuIngredients } from '../menuUtils';
+
+const BLANK_INGREDIENT_ROW = { inventoryId: '', qty: '1' };
 
 export default function Menu({
   menu = [],
@@ -17,8 +20,7 @@ export default function Menu({
   const [name, setName] = useState('');
   const [category, setCategory] = useState('Beverages');
   const [price, setPrice] = useState('');
-  const [inventoryId, setInventoryId] = useState('');
-  const [inventoryQty, setInventoryQty] = useState('1');
+  const [ingredients, setIngredients] = useState([{ ...BLANK_INGREDIENT_ROW }]);
 
   // Filter items
   const filteredMenu = menu.filter(item => 
@@ -31,8 +33,7 @@ export default function Menu({
     setName('');
     setCategory('Beverages');
     setPrice('');
-    setInventoryId('');
-    setInventoryQty('1');
+    setIngredients([{ ...BLANK_INGREDIENT_ROW }]);
     setShowAddModal(true);
   };
 
@@ -41,9 +42,25 @@ export default function Menu({
     setName(item.name);
     setCategory(item.category);
     setPrice(item.price.toString());
-    setInventoryId(item.inventoryId || '');
-    setInventoryQty((item.inventoryQty || 1).toString());
+    const existingIngredients = getMenuIngredients(item);
+    setIngredients(
+      existingIngredients.length > 0
+        ? existingIngredients.map(ing => ({ inventoryId: ing.inventoryId, qty: ing.qty.toString() }))
+        : [{ ...BLANK_INGREDIENT_ROW }]
+    );
     setShowAddModal(true);
+  };
+
+  const handleAddIngredientRow = () => {
+    setIngredients([...ingredients, { ...BLANK_INGREDIENT_ROW }]);
+  };
+
+  const handleRemoveIngredientRow = (index) => {
+    setIngredients(ingredients.filter((_, i) => i !== index));
+  };
+
+  const handleIngredientChange = (index, field, value) => {
+    setIngredients(ingredients.map((ing, i) => (i === index ? { ...ing, [field]: value } : ing)));
   };
 
   const handleSaveItem = (e) => {
@@ -54,18 +71,25 @@ export default function Menu({
     }
 
     const parsedPrice = parseFloat(price);
-    const parsedQty = parseFloat(inventoryQty) || 1;
+    if (parsedPrice < 0) {
+      addToast('Price must be positive', 'error');
+      return;
+    }
 
-    if (parsedPrice < 0 || parsedQty <= 0) {
-      addToast('Price and consumption quantity must be positive', 'error');
+    const cleanedIngredients = ingredients
+      .filter(ing => ing.inventoryId)
+      .map(ing => ({ inventoryId: ing.inventoryId, qty: parseFloat(ing.qty) || 1 }));
+
+    if (cleanedIngredients.some(ing => ing.qty <= 0)) {
+      addToast('Ingredient quantities must be positive', 'error');
       return;
     }
 
     let updatedMenu;
     if (editingItem) {
-      updatedMenu = menu.map(m => 
-        m.id === editingItem.id 
-          ? { ...m, name, category, price: parsedPrice, inventoryId, inventoryQty: parsedQty }
+      updatedMenu = menu.map(m =>
+        m.id === editingItem.id
+          ? { ...m, name, category, price: parsedPrice, ingredients: cleanedIngredients, inventoryId: null, inventoryQty: null }
           : m
       );
       addToast('Menu item updated');
@@ -75,8 +99,7 @@ export default function Menu({
         name,
         category,
         price: parsedPrice,
-        inventoryId,
-        inventoryQty: parsedQty
+        ingredients: cleanedIngredients
       };
       updatedMenu = [...menu, newItem];
       addToast('Menu item added successfully');
@@ -111,25 +134,38 @@ export default function Menu({
       { id: 'inv_tonic', name: 'Schweppes Tonic Water', costPrice: 50, stock: 50.0, unit: 'pcs', minStock: 10.0 },
       { id: 'inv_beer_bud', name: 'Budweiser Beer Bottles', costPrice: 140, stock: 80.0, unit: 'pcs', minStock: 12.0 },
       { id: 'inv_beer_hein', name: 'Heineken Beer Bottles', costPrice: 160, stock: 80.0, unit: 'pcs', minStock: 12.0 },
-      { id: 'inv_orange_juice', name: 'Fresh Orange Juice Stock', costPrice: 40, stock: 40.0, unit: 'L', minStock: 8.0 }
+      { id: 'inv_orange_juice', name: 'Fresh Orange Juice Stock', costPrice: 40, stock: 40.0, unit: 'L', minStock: 8.0 },
+      { id: 'inv_burger_bun', name: 'Burger Buns', costPrice: 15, stock: 100.0, unit: 'pcs', minStock: 20.0 },
+      { id: 'inv_beef_patty', name: 'Beef Patty', costPrice: 60, stock: 80.0, unit: 'pcs', minStock: 15.0 }
     ];
 
     const mockMenu = [
-      { id: 'menu_espresso', name: 'Espresso Coffee', category: 'Beverages', price: 80, inventoryId: 'inv_coffee_beans', inventoryQty: 0.02 },
-      { id: 'menu_cappuccino', name: 'Cappuccino Coffee', category: 'Beverages', price: 120, inventoryId: 'inv_milk', inventoryQty: 0.25 },
-      { id: 'menu_latte', name: 'Cafe Latte', category: 'Beverages', price: 140, inventoryId: 'inv_milk', inventoryQty: 0.2 },
-      { id: 'menu_black_tea', name: 'Black Tea', category: 'Beverages', price: 40, inventoryId: 'inv_tea_leaves', inventoryQty: 0.01 },
-      { id: 'menu_sweet_tea', name: 'Sweet Tea', category: 'Beverages', price: 50, inventoryId: 'inv_sugar', inventoryQty: 0.05 },
-      { id: 'menu_chocolate_muffin', name: 'Chocolate Muffin', category: 'Bakery', price: 90, inventoryId: 'inv_paper_cups', inventoryQty: 1.0 },
-      { id: 'menu_cola', name: 'Coca-Cola Can (330ml)', category: 'Drinks', price: 60, inventoryId: 'inv_cola', inventoryQty: 1.0 },
-      { id: 'menu_sprite', name: 'Sprite Can (330ml)', category: 'Drinks', price: 60, inventoryId: 'inv_sprite', inventoryQty: 1.0 },
-      { id: 'menu_fanta', name: 'Fanta Orange Can (330ml)', category: 'Drinks', price: 60, inventoryId: 'inv_fanta', inventoryQty: 1.0 },
-      { id: 'menu_redbull', name: 'Red Bull Energy Can', category: 'Drinks', price: 160, inventoryId: 'inv_redbull', inventoryQty: 1.0 },
-      { id: 'menu_water', name: 'Bottled Mineral Water', category: 'Drinks', price: 20, inventoryId: 'inv_water', inventoryQty: 1.0 },
-      { id: 'menu_tonic', name: 'Schweppes Tonic Water', category: 'Drinks', price: 80, inventoryId: 'inv_tonic', inventoryQty: 1.0 },
-      { id: 'menu_beer_bud', name: 'Budweiser Beer Bottle', category: 'Drinks', price: 220, inventoryId: 'inv_beer_bud', inventoryQty: 1.0 },
-      { id: 'menu_beer_hein', name: 'Heineken Beer Bottle', category: 'Drinks', price: 250, inventoryId: 'inv_beer_hein', inventoryQty: 1.0 },
-      { id: 'menu_orange_juice', name: 'Fresh Orange Juice Glass', category: 'Drinks', price: 90, inventoryId: 'inv_orange_juice', inventoryQty: 0.3 }
+      { id: 'menu_espresso', name: 'Espresso Coffee', category: 'Beverages', price: 80, ingredients: [{ inventoryId: 'inv_coffee_beans', qty: 0.02 }] },
+      { id: 'menu_cappuccino', name: 'Cappuccino Coffee', category: 'Beverages', price: 120, ingredients: [{ inventoryId: 'inv_milk', qty: 0.25 }] },
+      { id: 'menu_latte', name: 'Cafe Latte', category: 'Beverages', price: 140, ingredients: [{ inventoryId: 'inv_milk', qty: 0.2 }] },
+      { id: 'menu_black_tea', name: 'Black Tea', category: 'Beverages', price: 40, ingredients: [{ inventoryId: 'inv_tea_leaves', qty: 0.01 }] },
+      { id: 'menu_sweet_tea', name: 'Sweet Tea', category: 'Beverages', price: 50, ingredients: [{ inventoryId: 'inv_sugar', qty: 0.05 }] },
+      { id: 'menu_chocolate_muffin', name: 'Chocolate Muffin', category: 'Bakery', price: 90, ingredients: [{ inventoryId: 'inv_paper_cups', qty: 1.0 }] },
+      { id: 'menu_cola', name: 'Coca-Cola Can (330ml)', category: 'Drinks', price: 60, ingredients: [{ inventoryId: 'inv_cola', qty: 1.0 }] },
+      { id: 'menu_sprite', name: 'Sprite Can (330ml)', category: 'Drinks', price: 60, ingredients: [{ inventoryId: 'inv_sprite', qty: 1.0 }] },
+      { id: 'menu_fanta', name: 'Fanta Orange Can (330ml)', category: 'Drinks', price: 60, ingredients: [{ inventoryId: 'inv_fanta', qty: 1.0 }] },
+      { id: 'menu_redbull', name: 'Red Bull Energy Can', category: 'Drinks', price: 160, ingredients: [{ inventoryId: 'inv_redbull', qty: 1.0 }] },
+      { id: 'menu_water', name: 'Bottled Mineral Water', category: 'Drinks', price: 20, ingredients: [{ inventoryId: 'inv_water', qty: 1.0 }] },
+      { id: 'menu_tonic', name: 'Schweppes Tonic Water', category: 'Drinks', price: 80, ingredients: [{ inventoryId: 'inv_tonic', qty: 1.0 }] },
+      { id: 'menu_beer_bud', name: 'Budweiser Beer Bottle', category: 'Drinks', price: 220, ingredients: [{ inventoryId: 'inv_beer_bud', qty: 1.0 }] },
+      { id: 'menu_beer_hein', name: 'Heineken Beer Bottle', category: 'Drinks', price: 250, ingredients: [{ inventoryId: 'inv_beer_hein', qty: 1.0 }] },
+      { id: 'menu_orange_juice', name: 'Fresh Orange Juice Glass', category: 'Drinks', price: 90, ingredients: [{ inventoryId: 'inv_orange_juice', qty: 0.3 }] },
+      {
+        id: 'menu_combo_burger',
+        name: 'Classic Burger + Coke Combo',
+        category: 'Combos',
+        price: 220,
+        ingredients: [
+          { inventoryId: 'inv_burger_bun', qty: 1 },
+          { inventoryId: 'inv_beef_patty', qty: 1 },
+          { inventoryId: 'inv_cola', qty: 1 }
+        ]
+      }
     ];
 
     onUpdateInventory(mockInventory);
@@ -213,7 +249,7 @@ export default function Menu({
               </thead>
               <tbody>
                 {filteredMenu.map(item => {
-                  const linkedInv = item.inventoryId ? inventory.find(inv => inv.id === item.inventoryId) : null;
+                  const itemIngredients = getMenuIngredients(item);
                   return (
                     <tr key={item.id} style={{ background: selectedIds.includes(item.id) ? 'rgba(239, 68, 68, 0.05)' : '' }}>
                       <td>
@@ -232,14 +268,21 @@ export default function Menu({
                       <td style={{ fontWeight: '600' }}>{item.name}</td>
                       <td><span className="badge badge-muted">{item.category}</span></td>
                       <td>
-                        {!item.inventoryId ? (
+                        {itemIngredients.length === 0 ? (
                           <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>Not linked</span>
-                        ) : linkedInv ? (
-                          <span className="badge badge-indigo" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                            <Link2 size={11} /> {linkedInv.name} ({item.inventoryQty} {linkedInv.unit}/sale)
-                          </span>
                         ) : (
-                          <span className="badge badge-coral">Linked item missing</span>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                            {itemIngredients.map((ing, idx) => {
+                              const linkedInv = inventory.find(inv => inv.id === ing.inventoryId);
+                              return linkedInv ? (
+                                <span key={idx} className="badge badge-indigo" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                                  <Link2 size={11} /> {linkedInv.name} ({ing.qty} {linkedInv.unit}/sale)
+                                </span>
+                              ) : (
+                                <span key={idx} className="badge badge-coral">Linked item missing</span>
+                              );
+                            })}
+                          </div>
                         )}
                       </td>
                       <td style={{ fontWeight: '700', color: 'var(--accent-teal)' }}>₹{item.price.toFixed(2)}</td>
@@ -322,40 +365,50 @@ export default function Menu({
                 </div>
 
                 <div className="form-group">
-                  <label>Link to Inventory Item (optional)</label>
-                  <select
-                    className="input-field select-field"
-                    value={inventoryId}
-                    onChange={(e) => setInventoryId(e.target.value)}
-                  >
-                    <option value="">No link (unlimited / untracked stock)</option>
-                    {inventory.map(inv => (
-                      <option key={inv.id} value={inv.id}>{inv.name} — {inv.stock} {inv.unit} in stock</option>
-                    ))}
-                  </select>
-                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px', display: 'block' }}>
-                    Linking makes this menu item automatically deduct wholesale stock on every sale, and it'll show as "Out of Stock" on the POS screen once supply runs out.
+                  <label>Inventory Ingredients (optional)</label>
+                  <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '8px', display: 'block' }}>
+                    Link one or more wholesale inventory items this menu item consumes per sale — e.g. a combo of 1 bun + 1 patty + 1 canned drink. Stock is deducted automatically at checkout, and it'll show as "Out of Stock" on the POS screen once any linked ingredient runs out.
                   </span>
+                  {ingredients.map((ing, idx) => {
+                    const invItem = inventory.find(inv => inv.id === ing.inventoryId);
+                    return (
+                      <div key={idx} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr auto', gap: '8px', marginBottom: '8px', alignItems: 'center' }}>
+                        <select
+                          className="input-field select-field"
+                          value={ing.inventoryId}
+                          onChange={(e) => handleIngredientChange(idx, 'inventoryId', e.target.value)}
+                        >
+                          <option value="">No link (unlimited / untracked stock)</option>
+                          {inventory.map(inv => (
+                            <option key={inv.id} value={inv.id}>{inv.name} — {inv.stock} {inv.unit} in stock</option>
+                          ))}
+                        </select>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0.01"
+                          className="input-field"
+                          placeholder={invItem ? `Qty (${invItem.unit})` : 'Qty/sale'}
+                          value={ing.qty}
+                          onChange={(e) => handleIngredientChange(idx, 'qty', e.target.value)}
+                          disabled={!ing.inventoryId}
+                        />
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          style={{ padding: '6px', borderRadius: 'var(--radius-sm)' }}
+                          onClick={() => handleRemoveIngredientRow(idx)}
+                          disabled={ingredients.length === 1}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    );
+                  })}
+                  <button type="button" className="btn btn-secondary" onClick={handleAddIngredientRow}>
+                    <Plus size={14} /> Add Ingredient
+                  </button>
                 </div>
-
-                {inventoryId && (
-                  <div className="form-group">
-                    <label>Consumed Per Sale *</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0.01"
-                      required
-                      className="input-field"
-                      placeholder="e.g. 1 (one can) or 0.25 (250ml from a 1L stock unit)"
-                      value={inventoryQty}
-                      onChange={(e) => setInventoryQty(e.target.value)}
-                    />
-                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px', display: 'block' }}>
-                      How much of "{inventory.find(inv => inv.id === inventoryId)?.name}" is used each sale, in the same unit as its stock ({inventory.find(inv => inv.id === inventoryId)?.unit}).
-                    </span>
-                  </div>
-                )}
               </div>
               <div className="modal-footer">
                 <button type="button" className="btn btn-secondary" onClick={() => setShowAddModal(false)}>Cancel</button>

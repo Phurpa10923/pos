@@ -57,6 +57,7 @@ CREATE TABLE public.menu (
     price NUMERIC NOT NULL DEFAULT 0,
     inventory_id TEXT REFERENCES public.inventory(id) ON DELETE SET NULL,
     inventory_qty NUMERIC,
+    ingredients JSONB NOT NULL DEFAULT '[]'::jsonb,
     synced BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
@@ -226,6 +227,18 @@ Staff bills no longer ask for a payment method at all (no real payment is collec
 ALTER TABLE public.sales DROP CONSTRAINT IF EXISTS chk_payment;
 ALTER TABLE public.sales ADD CONSTRAINT chk_payment CHECK (payment_method IN ('Cash', 'UPI', 'Card', 'Split (Cash + UPI)', 'Staff'));
 ```
+
+### Existing project? Run this if you don't have `ingredients` on `menu`
+
+A menu item used to link to only one wholesale inventory item (`inventory_id` + `inventory_qty`), which couldn't represent a combo/recipe made of several ingredients (e.g. 1 bun + 1 patty + 1 canned drink). Run this once to add a column that stores a list of `{inventoryId, qty}` pairs instead — safe to run even if it already exists:
+
+```sql
+ALTER TABLE public.menu ADD COLUMN IF NOT EXISTS ingredients JSONB NOT NULL DEFAULT '[]'::jsonb;
+```
+
+- Existing rows keep working unchanged: any menu item without an `ingredients` list falls back to its old single `inventory_id`/`inventory_qty` link until it's re-saved from the Menu screen.
+- Once a menu item is edited and saved with one or more ingredient rows, the app writes to `ingredients` and clears the legacy `inventory_id`/`inventory_qty` columns for that row.
+- Stock is deducted for every ingredient on a menu item at checkout, same as before — just summed across as many linked inventory items as the recipe needs.
 
 ---
 

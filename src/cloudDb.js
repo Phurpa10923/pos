@@ -44,6 +44,12 @@ function toSnakeCase(item, tableName) {
       delete converted.inventoryId;
     }
     if ('inventoryQty' in converted) { converted.inventory_qty = Number(converted.inventoryQty); delete converted.inventoryQty; }
+    if ('ingredients' in converted) {
+      const rawIngredients = Array.isArray(converted.ingredients) ? converted.ingredients : [];
+      converted.ingredients = rawIngredients
+        .filter(ing => ing && typeof ing.inventoryId === 'string' && ing.inventoryId.trim())
+        .map(ing => ({ inventoryId: ing.inventoryId, qty: Number(ing.qty) || 1 }));
+    }
     if ('price' in converted) { converted.price = Number(converted.price); }
   }
 
@@ -102,6 +108,7 @@ function toCamelCase(item, tableName) {
   if (tableName === 'menu') {
     if ('inventory_id' in converted) { converted.inventoryId = converted.inventory_id; delete converted.inventory_id; }
     if ('inventory_qty' in converted) { converted.inventoryQty = Number(converted.inventory_qty); delete converted.inventory_qty; }
+    if ('ingredients' in converted) { converted.ingredients = Array.isArray(converted.ingredients) ? converted.ingredients : []; }
     if ('price' in converted) { converted.price = Number(converted.price); }
   }
 

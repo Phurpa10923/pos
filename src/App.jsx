@@ -6,6 +6,7 @@ import Inventory from './components/Inventory';
 import Employees from './components/Employees';
 import Reports from './components/Reports';
 import SettingsTab from './components/Settings';
+import { getMenuIngredients } from './menuUtils';
 
 import {
   dbFetchAll,
@@ -555,9 +556,12 @@ export default function App() {
         qtyDeltaByProduct.forEach((deltaQty, productId) => {
           if (deltaQty === 0) return;
           const menuItem = menu.find(m => m.id === productId);
-          if (menuItem && menuItem.inventoryId === invItem.id) {
-            totalDelta += deltaQty * (menuItem.inventoryQty || 1);
-          }
+          if (!menuItem) return;
+          getMenuIngredients(menuItem).forEach(ing => {
+            if (ing.inventoryId === invItem.id) {
+              totalDelta += deltaQty * ing.qty;
+            }
+          });
         });
         if (totalDelta !== 0) {
           hasInventoryChanges = true;

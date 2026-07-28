@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { dbFetchSalesByRange } from '../cloudDb';
 import { getTaxDetails } from '../taxUtils';
 import { Calendar, Download, RefreshCw, BarChart2, TrendingUp, PieChart, IndianRupee, Pencil, Plus, Minus, Trash2, Users } from 'lucide-react';
+import { getMenuIngredients } from '../menuUtils';
 
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, (ch) => ({
@@ -267,14 +268,14 @@ export default function Reports({
 
   const totalRevenue = customerSales.reduce((sum, s) => sum + s.total, 0);
 
-  // Wholesale/ingredient cost of one line item, via its linked inventory raw material
+  // Wholesale/ingredient cost of one line item, summed across all its linked inventory items
   const itemCost = (item) => {
     const menuItem = products.find(m => m.id === item.productId);
-    if (menuItem && menuItem.inventoryId) {
-      const invItem = inventory.find(inv => inv.id === menuItem.inventoryId);
-      if (invItem) return (invItem.costPrice || 0) * (menuItem.inventoryQty || 1);
-    }
-    return 0;
+    if (!menuItem) return 0;
+    return getMenuIngredients(menuItem).reduce((sum, ing) => {
+      const invItem = inventory.find(inv => inv.id === ing.inventoryId);
+      return sum + (invItem ? (invItem.costPrice || 0) * ing.qty : 0);
+    }, 0);
   };
 
   // Calculate Profit (Sale price - Cost price of raw materials), customer sales only

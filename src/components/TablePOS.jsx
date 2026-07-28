@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Search, ShoppingBag, Plus, Minus, Receipt, Check, Trash2, ArrowLeft, PlusCircle } from 'lucide-react';
 import { getTaxDetails } from '../taxUtils';
+import { getMenuIngredients } from '../menuUtils';
 
 // payment_method only ever holds the plain mode ('Cash'/'UPI'/'Card'/'Split (Cash + UPI)') —
 // the actual split breakdown lives in cashAmount/upiAmount, so build the display string here.
@@ -116,13 +117,13 @@ export default function TablePOS({
       return;
     }
 
-    // Check linked raw materials stock
+    // Check linked raw materials stock (a menu item may consume several ingredients)
     const currentQtyInOrder = activeTable.currentOrder.find(item => item.productId === product.id)?.quantity || 0;
-    
-    if (product.inventoryId) {
-      const rawItem = inventory.find(i => i.id === product.inventoryId);
+
+    for (const ing of getMenuIngredients(product)) {
+      const rawItem = inventory.find(i => i.id === ing.inventoryId);
       if (rawItem) {
-        const requiredStock = (currentQtyInOrder + 1) * (product.inventoryQty || 1);
+        const requiredStock = (currentQtyInOrder + 1) * ing.qty;
         if (Number(rawItem.stock) < requiredStock) {
           addToast(`Cannot add. Not enough ${rawItem.name} in stock (${rawItem.stock} left).`, 'error');
           return;
@@ -178,14 +179,16 @@ export default function TablePOS({
           if (newQty <= 0) {
             order.splice(index, 1);
           } else {
-            // Check inventory stock limits for increments
-            if (delta > 0 && product.inventoryId) {
-              const rawItem = inventory.find(i => i.id === product.inventoryId);
-              if (rawItem) {
-                const requiredStock = newQty * (product.inventoryQty || 1);
-                if (Number(rawItem.stock) < requiredStock) {
-                  addToast(`Cannot increase. Stock limit of ${rawItem.name} reached.`, 'error');
-                  return t;
+            // Check inventory stock limits for increments (across all linked ingredients)
+            if (delta > 0) {
+              for (const ing of getMenuIngredients(product)) {
+                const rawItem = inventory.find(i => i.id === ing.inventoryId);
+                if (rawItem) {
+                  const requiredStock = newQty * ing.qty;
+                  if (Number(rawItem.stock) < requiredStock) {
+                    addToast(`Cannot increase. Stock limit of ${rawItem.name} reached.`, 'error');
+                    return t;
+                  }
                 }
               }
             }
@@ -286,16 +289,20 @@ export default function TablePOS({
     }
 
     // 1. Decrement raw inventory quantities based on order consumption
+    // (each ordered menu item may consume several linked ingredients)
     const updatedInventory = inventory.map(invItem => {
       let totalQtyToDeduct = 0;
-      
+
       activeTable.currentOrder.forEach(orderedItem => {
         const menuItem = menu.find(m => m.id === orderedItem.productId);
-        if (menuItem && menuItem.inventoryId === invItem.id) {
-          totalQtyToDeduct += orderedItem.quantity * (menuItem.inventoryQty || 1);
-        }
+        if (!menuItem) return;
+        getMenuIngredients(menuItem).forEach(ing => {
+          if (ing.inventoryId === invItem.id) {
+            totalQtyToDeduct += orderedItem.quantity * ing.qty;
+          }
+        });
       });
-      
+
       if (totalQtyToDeduct > 0) {
         return {
           ...invItem,
@@ -681,19 +688,30 @@ export default function TablePOS({
 
             <div className="products-grid">
               {filteredProducts.map(prod => {
-                const rawItem = prod.inventoryId ? inventory.find(i => i.id === prod.inventoryId) : null;
+                const requiredIngredients = getMenuIngredients(prod);
                 const orderQty = activeTable.currentOrder.find(item => item.productId === prod.id)?.quantity || 0;
-                
+
                 let isOutOfStock = false;
                 let stockLeftDisplay = 'Direct';
                 let isLow = false;
-                
-                if (rawItem) {
-                  const neededPerUnit = prod.inventoryQty || 1;
-                  const availableUnits = Math.floor(Number(rawItem.stock) / neededPerUnit);
-                  isOutOfStock = availableUnits <= 0;
-                  isLow = Number(rawItem.stock) <= Number(rawItem.minStock);
-                  stockLeftDisplay = `${availableUnits - orderQty} left`;
+
+                // Sellable units are capped by whichever linked ingredient runs out first
+                if (requiredIngredients.length > 0) {
+                  let minAvailableUnits = Infinity;
+                  let anyLow = false;
+                  requiredIngredients.forEach(ing => {
+                    const rawItem = inventory.find(i => i.id === ing.inventoryId);
+                    if (rawItem) {
+                      const availableUnits = Math.floor(Number(rawItem.stock) / ing.qty);
+                      minAvailableUnits = Math.min(minAvailableUnits, availableUnits);
+                      if (Number(rawItem.stock) <= Number(rawItem.minStock)) anyLow = true;
+                    }
+                  });
+                  if (minAvailableUnits !== Infinity) {
+                    isOutOfStock = minAvailableUnits <= 0;
+                    isLow = anyLow;
+                    stockLeftDisplay = `${minAvailableUnits - orderQty} left`;
+                  }
                 }
 
                 return (
