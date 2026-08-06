@@ -20,7 +20,10 @@ import {
   startRealtimeSync,
   getRestaurantId,
   setRestaurantId as persistRestaurantId,
-  clearRestaurantId
+  clearRestaurantId,
+  getPendingSales,
+  addPendingSale,
+  removePendingSale
 } from './cloudDb';
 
 import {
@@ -142,6 +145,14 @@ export default function App() {
   const [employees, setEmployees] = useState([]);
   const [attendance, setAttendance] = useState([]);
 
+  // Sales that failed to reach Supabase (offline at checkout, etc.) — kept in
+  // localStorage via cloudDb's pending-sale queue so they survive a reload, and
+  // merged into what every view sees until a background retry gets them synced.
+  const [pendingSales, setPendingSales] = useState(() => getPendingSales(getRestaurantId()));
+  const visibleSales = pendingSales.length === 0
+    ? sales
+    : [...sales, ...pendingSales.filter(p => !sales.some(s => s.id === p.id))];
+
   // Data loading / error state (there's no local cache, so every view depends on this)
   const [initialLoadDone, setInitialLoadDone] = useState(false);
   const [dataError, setDataError] = useState(null);
@@ -225,6 +236,53 @@ export default function App() {
       loadAllData();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser, restaurantId]);
+
+  // Re-load the offline sale queue whenever the tenant changes (e.g. switching
+  // restaurants on the same device shouldn't leak one restaurant's queued sales
+  // into another's).
+  useEffect(() => {
+    setPendingSales(getPendingSales(restaurantId));
+  }, [restaurantId]);
+
+  // Background sync for offline-queued sales. A sale that failed to reach
+  // Supabase (typically: no internet at checkout) is held in the local queue
+  // instead of being discarded — this retries it once back online and on a
+  // steady interval, so it isn't lost waiting for the next manual action.
+  useEffect(() => {
+    if (!currentUser || !restaurantId) return;
+
+    const flushPendingSales = async () => {
+      if (!navigator.onLine) return;
+      const queued = getPendingSales(restaurantId);
+      if (queued.length === 0) return;
+
+      let syncedCount = 0;
+      for (const sale of queued) {
+        try {
+          await dbUpsert('sales', sale);
+          removePendingSale(restaurantId, sale.id);
+          setPendingSales(prev => prev.filter(s => s.id !== sale.id));
+          setSales(prev => (prev.some(s => s.id === sale.id) ? prev : [...prev, sale]));
+          syncedCount += 1;
+        } catch (err) {
+          console.warn('[PortablePOS] Retry sync failed for queued sale', sale.id, err);
+          // Leave it queued — the next 'online' event or interval tick retries it.
+        }
+      }
+      if (syncedCount > 0) {
+        addToast(`Synced ${syncedCount} offline sale${syncedCount === 1 ? '' : 's'} to the cloud`);
+      }
+    };
+
+    flushPendingSales();
+    window.addEventListener('online', flushPendingSales);
+    const interval = setInterval(flushPendingSales, 60000);
+
+    return () => {
+      window.removeEventListener('online', flushPendingSales);
+      clearInterval(interval);
+    };
   }, [currentUser, restaurantId]);
 
   // Enforce role-based routing checks when user session state changes
@@ -502,14 +560,27 @@ export default function App() {
     }
   };
 
+  // Queues the sale locally first (survives an offline checkout or a mid-sync
+  // page reload), then tries to push it to Supabase right away. On failure —
+  // most commonly no internet — it stays queued instead of being discarded;
+  // the background retry effect above picks it up as soon as connectivity
+  // returns, so a bill closed offline is never silently lost.
   const handleAddSale = async (newSale) => {
-    setSales(prev => [...prev, newSale]);
+    setPendingSales(addPendingSale(restaurantId, newSale));
     setSavingCount(c => c + 1);
     try {
       await dbUpsert('sales', newSale);
+      setPendingSales(removePendingSale(restaurantId, newSale.id));
+      setSales(prev => (prev.some(s => s.id === newSale.id) ? prev : [...prev, newSale]));
     } catch (err) {
-      setSales(prev => prev.filter(s => s.id !== newSale.id));
-      addToast(`Failed to save sale: ${err.message}`, 'error');
+      // Left in the pending queue on purpose — visibleSales already shows it
+      // via the merge with pendingSales, so nothing is lost from the user's view.
+      addToast(
+        isOnline
+          ? `Couldn't sync sale to the cloud yet — saved locally, will retry automatically: ${err.message}`
+          : 'Offline — sale saved locally and will sync automatically once back online',
+        'warning'
+      );
     } finally {
       setSavingCount(c => c - 1);
     }
@@ -832,6 +903,17 @@ export default function App() {
             }}></span>
             {isOnline ? 'Online' : 'Offline — Reconnecting'}
           </div>
+
+          {pendingSales.length > 0 && (
+            <div
+              className="status-badge"
+              style={{ background: 'rgba(245, 158, 11, 0.1)', color: 'var(--accent-amber)', borderColor: 'rgba(245,158,11,0.2)', marginTop: '8px' }}
+              title="Saved locally — will sync automatically once online"
+            >
+              <RefreshCw size={12} className={isOnline ? 'spin-icon' : ''} />
+              {pendingSales.length} sale{pendingSales.length === 1 ? '' : 's'} pending sync
+            </div>
+          )}
         </div>
       </aside>
 
@@ -877,7 +959,7 @@ export default function App() {
         <div className="content-body">
           {view === 'dashboard' && (
             <Dashboard
-              sales={sales}
+              sales={visibleSales}
               products={menu} // fallback for legacy metrics naming
               inventory={inventory}
               tables={tables}
@@ -935,7 +1017,7 @@ export default function App() {
 
           {view === 'reports' && (
             <Reports
-              sales={sales}
+              sales={visibleSales}
               products={menu} // Profit calculates based on menu items sold
               inventory={inventory}
               attendance={attendance}
@@ -958,7 +1040,7 @@ export default function App() {
               menu={menu}
               inventory={inventory}
               employees={employees}
-              sales={sales}
+              sales={visibleSales}
             />
           )}
         </div>

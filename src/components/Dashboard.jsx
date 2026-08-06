@@ -14,7 +14,10 @@ export default function Dashboard({
   // Calculations
   const todayStr = new Date().toISOString().split('T')[0];
   
-  const todaySales = sales.filter(s => s.timestamp.startsWith(todayStr));
+  // Staff bills collect no real payment and are tracked as an expense, not revenue —
+  // Reports' "Gross Revenue" already excludes them, so this has to match or the two
+  // screens disagree on "today's sales" any day a staff meal was billed.
+  const todaySales = sales.filter(s => s.timestamp.startsWith(todayStr) && !s.isStaffBill);
   const todayRevenue = todaySales.reduce((sum, s) => sum + s.total, 0);
   
   const activeTablesCount = tables.filter(t => t.status === 'live' || t.status === 'billed').length;

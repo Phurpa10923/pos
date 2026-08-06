@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Search, ShoppingBag, Plus, Minus, Receipt, Check, Trash2, ArrowLeft, PlusCircle } from 'lucide-react';
 import { getTaxDetails } from '../taxUtils';
-import { getMenuIngredients } from '../menuUtils';
+import { getMenuIngredients, getWholesaleCost } from '../menuUtils';
 
 // payment_method only ever holds the plain mode ('Cash'/'UPI'/'Card'/'Split (Cash + UPI)') —
 // the actual split breakdown lives in cashAmount/upiAmount, so build the display string here.
@@ -235,26 +235,44 @@ export default function TablePOS({
     }
   };
 
-  // Calculations for active order totals
+  // Calculations for active order totals (ticket pane display — always the menu/MRP
+  // price, since the Staff Bill decision isn't made until checkout opens).
   const subtotal = activeTable?.currentOrder.reduce((sum, i) => sum + (i.price * i.quantity), 0) || 0;
   const discountAmount = (subtotal * discountPercent) / 100;
   const taxableAmount = subtotal - discountAmount;
-  
+
   const taxDetails = getTaxDetails(taxType, taxableAmount);
-  const taxAmount = (taxableAmount * taxDetails.rate) / 100;
-  const finalTotal = taxableAmount + taxAmount;
+
+  // Staff bills carry no profit margin — bill them at raw wholesale/ingredient cost
+  // instead of the marked-up menu price. Falls back to the menu price for items with
+  // no linked inventory (nothing to price at cost), so they're never billed at ₹0.
+  const getBillingUnitPrice = (item) => {
+    if (!isStaffBill) return item.price;
+    const menuItem = menu.find(m => m.id === item.productId);
+    const cost = getWholesaleCost(menuItem, inventory);
+    return cost > 0 ? cost : item.price;
+  };
+
+  // Billing-basis totals used inside the payment modal and the final sale record —
+  // identical to subtotal/taxAmount above when it's not a staff bill.
+  const billSubtotal = activeTable?.currentOrder.reduce((sum, i) => sum + (getBillingUnitPrice(i) * i.quantity), 0) || 0;
+  const billDiscountAmount = (billSubtotal * discountPercent) / 100;
+  const billTaxableAmount = billSubtotal - billDiscountAmount;
+  const billTaxDetails = getTaxDetails(taxType, billTaxableAmount);
+  const billTaxAmount = (billTaxableAmount * billTaxDetails.rate) / 100;
+  const billTotal = billTaxableAmount + billTaxAmount;
 
   // Re-sync split payment amounts if discount/tax edits change the payable total
-  // after Split was already selected, so Cash + UPI always sums to finalTotal.
+  // after Split was already selected, so Cash + UPI always sums to billTotal.
   useEffect(() => {
     if (paymentMethod !== 'Split') return;
     setSplitCashAmount(prevCash => {
-      const clampedCash = Number(Math.min(prevCash, finalTotal).toFixed(2));
-      setSplitUpiAmount(Number((finalTotal - clampedCash).toFixed(2)));
+      const clampedCash = Number(Math.min(prevCash, billTotal).toFixed(2));
+      setSplitUpiAmount(Number((billTotal - clampedCash).toFixed(2)));
       return clampedCash;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [finalTotal]);
+  }, [billTotal]);
 
   // Action: Click Checkout
   const handleCheckoutClick = () => {
@@ -319,27 +337,29 @@ export default function TablePOS({
     // chk_payment only allows this exact literal for split-tender; the actual cash/UPI
     // amounts are carried separately in cashAmount/upiAmount below.
     const finalPaymentMethod = isStaffBill ? 'Staff' : (paymentMethod === 'Split' ? 'Split (Cash + UPI)' : paymentMethod);
-    const finalCashAmount = isStaffBill ? 0 : (paymentMethod === 'Split' ? splitCashAmount : (paymentMethod === 'Cash' ? finalTotal : 0));
-    const finalUpiAmount = isStaffBill ? 0 : (paymentMethod === 'Split' ? splitUpiAmount : (paymentMethod === 'UPI' ? finalTotal : 0));
+    const finalCashAmount = isStaffBill ? 0 : (paymentMethod === 'Split' ? splitCashAmount : (paymentMethod === 'Cash' ? billTotal : 0));
+    const finalUpiAmount = isStaffBill ? 0 : (paymentMethod === 'Split' ? splitUpiAmount : (paymentMethod === 'UPI' ? billTotal : 0));
 
     const newSale = {
       id: saleId,
       timestamp: new Date().toISOString(),
       tableName: activeTable.name,
+      // Staff bills record each item at wholesale/ingredient cost (getBillingUnitPrice),
+      // not the marked-up menu price — see billSubtotal/billTotal above.
       items: activeTable.currentOrder.map(item => ({
         productId: item.productId,
         name: item.name,
         quantity: item.quantity,
-        price: item.price
+        price: getBillingUnitPrice(item)
       })),
-      subtotal: subtotal,
+      subtotal: billSubtotal,
       discount: discountPercent,
       taxType: taxType,
-      taxRate: taxDetails.rate,
-      taxAmount: taxAmount,
-      taxBreakdown: taxDetails.breakdown,
-      total: finalTotal,
-      amountPaid: finalTotal,
+      taxRate: billTaxDetails.rate,
+      taxAmount: billTaxAmount,
+      taxBreakdown: billTaxDetails.breakdown,
+      total: billTotal,
+      amountPaid: billTotal,
       paymentMethod: finalPaymentMethod,
       cashAmount: finalCashAmount,
       upiAmount: finalUpiAmount,
@@ -876,10 +896,15 @@ export default function TablePOS({
               <div style={{ padding: '12px', background: 'rgba(0,0,0,0.15)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', marginBottom: '4px' }}>
                   <span style={{ color: 'var(--text-secondary)' }}>Item Subtotal:</span>
-                  <span style={{ fontWeight: '600' }}>₹{subtotal.toFixed(2)}</span>
+                  <span style={{ fontWeight: '600' }}>₹{billSubtotal.toFixed(2)}</span>
                 </div>
+                {isStaffBill && billSubtotal !== subtotal && (
+                  <div style={{ fontSize: '11px', color: 'var(--accent-amber)' }}>
+                    Billed at wholesale cost, not menu price (₹{subtotal.toFixed(2)}) — no profit on staff usage.
+                  </div>
+                )}
               </div>
-              
+
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: '12px' }}>
                 <div className="form-group">
                   <label>Discount (%)</label>
@@ -966,7 +991,7 @@ export default function TablePOS({
                       onChange={(e) => {
                         setPaymentMethod(e.target.value);
                         if (e.target.value === 'Split') {
-                          setSplitCashAmount(finalTotal);
+                          setSplitCashAmount(billTotal);
                           setSplitUpiAmount(0);
                         }
                       }}
@@ -986,14 +1011,14 @@ export default function TablePOS({
                           <input
                             type="number"
                             min="0"
-                            max={finalTotal}
+                            max={billTotal}
                             step="0.01"
                             className="input-field"
                             value={splitCashAmount}
                             onChange={(e) => {
-                              const cashVal = Math.max(0, Math.min(finalTotal, parseFloat(e.target.value) || 0));
+                              const cashVal = Math.max(0, Math.min(billTotal, parseFloat(e.target.value) || 0));
                               setSplitCashAmount(cashVal);
-                              setSplitUpiAmount(Number((finalTotal - cashVal).toFixed(2)));
+                              setSplitUpiAmount(Number((billTotal - cashVal).toFixed(2)));
                             }}
                           />
                         </div>
@@ -1002,20 +1027,20 @@ export default function TablePOS({
                           <input
                             type="number"
                             min="0"
-                            max={finalTotal}
+                            max={billTotal}
                             step="0.01"
                             className="input-field"
                             value={splitUpiAmount}
                             onChange={(e) => {
-                              const upiVal = Math.max(0, Math.min(finalTotal, parseFloat(e.target.value) || 0));
+                              const upiVal = Math.max(0, Math.min(billTotal, parseFloat(e.target.value) || 0));
                               setSplitUpiAmount(upiVal);
-                              setSplitCashAmount(Number((finalTotal - upiVal).toFixed(2)));
+                              setSplitCashAmount(Number((billTotal - upiVal).toFixed(2)));
                             }}
                           />
                         </div>
                       </div>
                       <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                        Split: ₹{splitCashAmount.toFixed(2)} (Cash) + ₹{splitUpiAmount.toFixed(2)} (UPI) = ₹{finalTotal.toFixed(2)}
+                        Split: ₹{splitCashAmount.toFixed(2)} (Cash) + ₹{splitUpiAmount.toFixed(2)} (UPI) = ₹{billTotal.toFixed(2)}
                       </span>
                     </div>
                   )}
@@ -1037,8 +1062,8 @@ export default function TablePOS({
               </div>
 
               <div style={{ borderTop: '1px dashed var(--border-color)', paddingTop: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontWeight: '600', fontSize: '15px' }}>Grand Payable:</span>
-                <span style={{ fontSize: '22px', fontWeight: '700', color: 'var(--accent-teal)' }}>₹{finalTotal.toFixed(2)}</span>
+                <span style={{ fontWeight: '600', fontSize: '15px' }}>{isStaffBill ? 'Staff Expense Total:' : 'Grand Payable:'}</span>
+                <span style={{ fontSize: '22px', fontWeight: '700', color: 'var(--accent-teal)' }}>₹{billTotal.toFixed(2)}</span>
               </div>
             </div>
             <div className="modal-footer" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>

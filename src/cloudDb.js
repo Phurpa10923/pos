@@ -19,6 +19,45 @@ export function isOnline() {
   return navigator.onLine;
 }
 
+// --- Offline sale queue ---
+// A completed sale is written to Supabase immediately, but if that write fails
+// (typically: no internet at checkout), the sale is queued here in localStorage
+// instead of being discarded, so it survives a page reload/app restart. A
+// retry loop in App.jsx periodically flushes this queue once back online.
+function pendingSalesKey(restaurantId) {
+  return `pending_sales_${restaurantId}`;
+}
+
+export function getPendingSales(restaurantId) {
+  if (!restaurantId) return [];
+  try {
+    const raw = localStorage.getItem(pendingSalesKey(restaurantId));
+    const list = raw ? JSON.parse(raw) : [];
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+}
+
+function savePendingSales(restaurantId, list) {
+  if (!restaurantId) return;
+  localStorage.setItem(pendingSalesKey(restaurantId), JSON.stringify(list));
+}
+
+export function addPendingSale(restaurantId, sale) {
+  const current = getPendingSales(restaurantId);
+  if (current.some(s => s.id === sale.id)) return current;
+  const updated = [...current, sale];
+  savePendingSales(restaurantId, updated);
+  return updated;
+}
+
+export function removePendingSale(restaurantId, saleId) {
+  const updated = getPendingSales(restaurantId).filter(s => s.id !== saleId);
+  savePendingSales(restaurantId, updated);
+  return updated;
+}
+
 function authHeaders(extra = {}) {
   return {
     'apikey': SUPABASE_ANON_KEY,
