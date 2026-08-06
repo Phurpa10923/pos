@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { dbFetchSalesByRange } from '../cloudDb';
 import { getTaxDetails } from '../taxUtils';
 import { Calendar, Download, RefreshCw, BarChart2, TrendingUp, PieChart, IndianRupee, Pencil, Plus, Minus, Trash2, Users } from 'lucide-react';
-import { getMenuIngredients } from '../menuUtils';
+import { getWholesaleCost } from '../menuUtils';
 
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, (ch) => ({
@@ -59,6 +59,23 @@ export default function Reports({
   // (stacked side by side on desktop, but too cramped to show all at once on a phone)
   const [detailsTab, setDetailsTab] = useState('split'); // 'split' | 'items' | 'transactions'
 
+  // Revenue trend chart hover state: which day the pointer is currently nearest to,
+  // so we can draw a guide line/dot and show a tooltip with that day's exact sales.
+  const [hoveredChartDay, setHoveredChartDay] = useState(null); // { day, revenue, x, y }
+  const chartSvgRef = useRef(null);
+
+  // Transactions Log filters — one control per column, all "all"/empty by default
+  // so the table shows everything until the user narrows it down.
+  const [showTxnFilters, setShowTxnFilters] = useState(false);
+  const [txnFilterId, setTxnFilterId] = useState('');
+  const [txnFilterTable, setTxnFilterTable] = useState('all');
+  const [txnFilterType, setTxnFilterType] = useState('all'); // all | customer | staff
+  const [txnFilterMethod, setTxnFilterMethod] = useState('all'); // all | Cash | UPI | Card | Split | Staff
+  const [txnFilterCashier, setTxnFilterCashier] = useState('all');
+  const [txnFilterBalance, setTxnFilterBalance] = useState('all'); // all | settled | owes | refund
+  const [txnFilterMinTotal, setTxnFilterMinTotal] = useState('');
+  const [txnFilterMaxTotal, setTxnFilterMaxTotal] = useState('');
+
   // Bill editing state (correcting a saved sale's items after the fact)
   const [isEditingBill, setIsEditingBill] = useState(false);
   const [editItems, setEditItems] = useState([]);
@@ -106,10 +123,24 @@ export default function Reports({
 
   // Helper date parsing
   const getDailySales = () => reportSales.filter(s => s.timestamp.startsWith(selectedDate));
-  
+
   const getMonthlySales = () => reportSales.filter(s => s.timestamp.startsWith(selectedMonth));
 
-  const currentPeriodSales = reportType === 'daily' ? getDailySales() : getMonthlySales();
+  // reportSales comes from a direct network fetch (dbFetchSalesByRange), which
+  // fails outright while offline and otherwise only ever reflects what's already
+  // reached Supabase. `sales` is the app-wide last-30-days list, which the App
+  // shell merges with any still-unsynced offline sales — folding it in here means
+  // a sale made without internet still shows up in today's report immediately,
+  // instead of only appearing once it eventually syncs.
+  const periodSalesFromProp = (reportType === 'daily'
+    ? sales.filter(s => s.timestamp.startsWith(selectedDate))
+    : sales.filter(s => s.timestamp.startsWith(selectedMonth))
+  );
+  const periodSalesFromFetch = reportType === 'daily' ? getDailySales() : getMonthlySales();
+  const currentPeriodSales = [
+    ...periodSalesFromFetch,
+    ...periodSalesFromProp.filter(s => !periodSalesFromFetch.some(f => f.id === s.id))
+  ];
 
   const generateReceiptImageBlob = (data) => {
     return new Promise((resolve) => {
@@ -269,14 +300,7 @@ export default function Reports({
   const totalRevenue = customerSales.reduce((sum, s) => sum + s.total, 0);
 
   // Wholesale/ingredient cost of one line item, summed across all its linked inventory items
-  const itemCost = (item) => {
-    const menuItem = products.find(m => m.id === item.productId);
-    if (!menuItem) return 0;
-    return getMenuIngredients(menuItem).reduce((sum, ing) => {
-      const invItem = inventory.find(inv => inv.id === ing.inventoryId);
-      return sum + (invItem ? (invItem.costPrice || 0) * ing.qty : 0);
-    }, 0);
-  };
+  const itemCost = (item) => getWholesaleCost(products.find(m => m.id === item.productId), inventory);
 
   // Calculate Profit (Sale price - Cost price of raw materials), customer sales only
   const customerProfit = customerSales.reduce((sum, sale) => {
@@ -744,6 +768,42 @@ export default function Reports({
     ? `${paddingX},${height - paddingY} ${points} ${width - paddingX},${height - paddingY}`
     : '';
 
+  // Maps a day in chartData to its plotted (x, y) — shared by the dot markers and
+  // the hover/tooltip logic below so they always agree on where a day sits.
+  const chartPointFor = (d) => ({
+    x: paddingX + ((d.day - 1) / (chartData.length - 1)) * (width - paddingX * 2),
+    y: height - paddingY - (d.revenue / maxRevenue) * (height - paddingY * 2)
+  });
+
+  // Tracks the pointer across the whole chart (not just the tiny data dots) and
+  // snaps to the nearest day, so hovering anywhere over the graph shows that
+  // day's exact sales — including days with zero sales, which have no dot.
+  const handleChartPointerMove = (e) => {
+    const svg = chartSvgRef.current;
+    if (!svg || chartData.length === 0) return;
+    const ctm = svg.getScreenCTM();
+    if (!ctm) return;
+    const pt = svg.createSVGPoint();
+    pt.x = e.clientX;
+    pt.y = e.clientY;
+    const svgPoint = pt.matrixTransform(ctm.inverse());
+    const ratio = Math.min(Math.max((svgPoint.x - paddingX) / (width - paddingX * 2), 0), 1);
+    const dayIdx = Math.round(ratio * (chartData.length - 1));
+    const d = chartData[dayIdx];
+    if (!d) return;
+    setHoveredChartDay({ ...d, ...chartPointFor(d) });
+  };
+
+  const handleChartPointerLeave = () => setHoveredChartDay(null);
+
+  // Clicking the graph is the "filter" affordance for it — jump straight to that
+  // day's Daily report instead of only ever being able to eyeball the month.
+  const handleChartClick = () => {
+    if (!hoveredChartDay) return;
+    setSelectedDate(`${selectedMonth}-${String(hoveredChartDay.day).padStart(2, '0')}`);
+    setReportType('daily');
+  };
+
   // --- Bill editing (correcting a saved sale) ---
   const handleStartEditBill = () => {
     setEditItems(receiptData.items.map(item => ({ ...item })));
@@ -857,6 +917,52 @@ export default function Reports({
       setIsSavingEdit(false);
     }
   };
+
+  // --- Transactions Log filtering ---
+  const uniqueTxnTables = [...new Set(currentPeriodSales.map(s => s.tableName).filter(Boolean))].sort();
+  const uniqueTxnCashiers = [...new Set(currentPeriodSales.map(s => s.cashier || 'Admin'))].sort();
+
+  // Normalizes a sale's paymentMethod into the same 5 buckets the Method filter
+  // dropdown offers (Split-tender collapses to one option regardless of its
+  // cash/UPI split; 'Staff' covers the no-payment staff-bill case).
+  const txnMethodKey = (sale) => {
+    if (sale.paymentMethod === 'Staff') return 'Staff';
+    if (typeof sale.paymentMethod === 'string' && sale.paymentMethod.startsWith('Split')) return 'Split';
+    return sale.paymentMethod;
+  };
+
+  const txnFiltersActive = txnFilterId.trim() !== '' || txnFilterTable !== 'all' || txnFilterType !== 'all'
+    || txnFilterMethod !== 'all' || txnFilterCashier !== 'all' || txnFilterBalance !== 'all'
+    || txnFilterMinTotal !== '' || txnFilterMaxTotal !== '';
+
+  const handleClearTxnFilters = () => {
+    setTxnFilterId('');
+    setTxnFilterTable('all');
+    setTxnFilterType('all');
+    setTxnFilterMethod('all');
+    setTxnFilterCashier('all');
+    setTxnFilterBalance('all');
+    setTxnFilterMinTotal('');
+    setTxnFilterMaxTotal('');
+  };
+
+  const filteredTransactions = currentPeriodSales.filter(sale => {
+    if (txnFilterId.trim() && !sale.id.toLowerCase().includes(txnFilterId.trim().toLowerCase())) return false;
+    if (txnFilterTable !== 'all' && sale.tableName !== txnFilterTable) return false;
+    if (txnFilterType === 'customer' && sale.isStaffBill) return false;
+    if (txnFilterType === 'staff' && !sale.isStaffBill) return false;
+    if (txnFilterMethod !== 'all' && txnMethodKey(sale) !== txnFilterMethod) return false;
+    if (txnFilterCashier !== 'all' && (sale.cashier || 'Admin') !== txnFilterCashier) return false;
+    if (txnFilterMinTotal !== '' && sale.total < parseFloat(txnFilterMinTotal)) return false;
+    if (txnFilterMaxTotal !== '' && sale.total > parseFloat(txnFilterMaxTotal)) return false;
+    if (txnFilterBalance !== 'all') {
+      const balance = sale.total - (sale.amountPaid ?? sale.total);
+      if (txnFilterBalance === 'settled' && Math.abs(balance) >= 0.01) return false;
+      if (txnFilterBalance === 'owes' && !(balance > 0.01)) return false;
+      if (txnFilterBalance === 'refund' && !(balance < -0.01)) return false;
+    }
+    return true;
+  });
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -989,7 +1095,14 @@ export default function Reports({
             Revenue Trend Overview (₹)
           </h3>
           <div className="chart-container">
-            <svg className="chart-svg" viewBox={`0 0 ${width} ${height}`}>
+            <svg
+              ref={chartSvgRef}
+              className="chart-svg"
+              viewBox={`0 0 ${width} ${height}`}
+              onMouseMove={handleChartPointerMove}
+              onMouseLeave={handleChartPointerLeave}
+              onClick={handleChartClick}
+            >
               <defs>
                 <linearGradient id="chart-gradient" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor="var(--accent-teal)" stopOpacity="0.4" />
@@ -1008,8 +1121,7 @@ export default function Reports({
 
               {/* Data Dot Indicators */}
               {chartData.filter(d => d.revenue > 0).map((d, index) => {
-                const x = paddingX + ((d.day - 1) / (chartData.length - 1)) * (width - paddingX * 2);
-                const y = height - paddingY - (d.revenue / maxRevenue) * (height - paddingY * 2);
+                const { x, y } = chartPointFor(d);
                 return (
                   <g key={index}>
                     <circle cx={x} cy={y} r="4" className="chart-dot" />
@@ -1017,6 +1129,25 @@ export default function Reports({
                   </g>
                 );
               })}
+
+              {/* Hover guide line + highlighted dot, tracking the pointer across
+                  the whole chart (see handleChartPointerMove) */}
+              {hoveredChartDay && (
+                <g>
+                  <line
+                    x1={hoveredChartDay.x} y1={paddingY} x2={hoveredChartDay.x} y2={height - paddingY}
+                    className="chart-hover-line"
+                  />
+                  <circle cx={hoveredChartDay.x} cy={hoveredChartDay.y} r="5" className="chart-dot chart-dot-hovered" />
+                </g>
+              )}
+
+              {/* Transparent hit-area so hover/click work across the full plot,
+                  not just on the tiny data dots (also covers zero-sales days) */}
+              <rect
+                x={paddingX} y={0} width={width - paddingX * 2} height={height}
+                fill="transparent" style={{ cursor: 'pointer' }}
+              />
 
               {/* Axis Labels */}
               <text x={paddingX} y={height - 6} className="chart-text" textAnchor="middle">1st</text>
@@ -1026,7 +1157,26 @@ export default function Reports({
               <text x={paddingX - 10} y={paddingY + 4} className="chart-text" textAnchor="end">₹{maxRevenue.toFixed(0)}</text>
               <text x={paddingX - 10} y={height - paddingY} className="chart-text" textAnchor="end">0</text>
             </svg>
+
+            {/* Floating tooltip: date + exact sales for whichever day the pointer is over.
+                Positioned as a % of the chart box since the SVG scales to fill it. */}
+            {hoveredChartDay && (
+              <div
+                className="chart-tooltip"
+                style={{
+                  left: `${(hoveredChartDay.x / width) * 100}%`,
+                  top: `${(hoveredChartDay.y / height) * 100}%`
+                }}
+              >
+                <div className="chart-tooltip-date">{selectedMonth}-{String(hoveredChartDay.day).padStart(2, '0')}</div>
+                <div className="chart-tooltip-value">₹{hoveredChartDay.revenue.toFixed(2)}</div>
+                <div className="chart-tooltip-hint">Click to view this day</div>
+              </div>
+            )}
           </div>
+          <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '8px', textAlign: 'center' }}>
+            Hover the graph to see any day's sales · click a point to open its Daily report
+          </p>
         </div>
       )}
 
@@ -1105,9 +1255,87 @@ export default function Reports({
 
         {/* Transactions list */}
         <div className={`glass-panel reports-detail-pane ${detailsTab === 'transactions' ? 'show-mobile' : ''}`} style={{ padding: '20px' }}>
-          <h3 className="section-title" style={{ marginBottom: '16px' }}>Transactions Log</h3>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
+            <h3 className="section-title" style={{ marginBottom: 0 }}>Transactions Log</h3>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {txnFiltersActive && (
+                <button className="btn btn-secondary" style={{ padding: '5px 10px', fontSize: '12px' }} onClick={handleClearTxnFilters}>
+                  Clear filters
+                </button>
+              )}
+              <button
+                className={`btn ${showTxnFilters ? 'btn-primary' : 'btn-secondary'}`}
+                style={{ padding: '5px 10px', fontSize: '12px' }}
+                onClick={() => setShowTxnFilters(v => !v)}
+              >
+                🔍 Filters{txnFiltersActive ? ` (${filteredTransactions.length}/${currentPeriodSales.length})` : ''}
+              </button>
+            </div>
+          </div>
+
+          {showTxnFilters && currentPeriodSales.length > 0 && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: '8px', marginBottom: '16px', padding: '12px', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)' }}>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label style={{ fontSize: '10px' }}>Txn ID</label>
+                <input type="text" className="input-field" style={{ padding: '6px 10px', fontSize: '12px' }} placeholder="Search ID..." value={txnFilterId} onChange={(e) => setTxnFilterId(e.target.value)} />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label style={{ fontSize: '10px' }}>Table</label>
+                <select className="input-field select-field" style={{ padding: '6px 10px', fontSize: '12px' }} value={txnFilterTable} onChange={(e) => setTxnFilterTable(e.target.value)}>
+                  <option value="all">All Tables</option>
+                  {uniqueTxnTables.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label style={{ fontSize: '10px' }}>Type</label>
+                <select className="input-field select-field" style={{ padding: '6px 10px', fontSize: '12px' }} value={txnFilterType} onChange={(e) => setTxnFilterType(e.target.value)}>
+                  <option value="all">All Types</option>
+                  <option value="customer">Customer</option>
+                  <option value="staff">Staff</option>
+                </select>
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label style={{ fontSize: '10px' }}>Method</label>
+                <select className="input-field select-field" style={{ padding: '6px 10px', fontSize: '12px' }} value={txnFilterMethod} onChange={(e) => setTxnFilterMethod(e.target.value)}>
+                  <option value="all">All Methods</option>
+                  <option value="Cash">Cash</option>
+                  <option value="UPI">UPI</option>
+                  <option value="Card">Card</option>
+                  <option value="Split">Split</option>
+                  <option value="Staff">No Payment (Staff)</option>
+                </select>
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label style={{ fontSize: '10px' }}>Cashier</label>
+                <select className="input-field select-field" style={{ padding: '6px 10px', fontSize: '12px' }} value={txnFilterCashier} onChange={(e) => setTxnFilterCashier(e.target.value)}>
+                  <option value="all">All Cashiers</option>
+                  {uniqueTxnCashiers.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label style={{ fontSize: '10px' }}>Balance</label>
+                <select className="input-field select-field" style={{ padding: '6px 10px', fontSize: '12px' }} value={txnFilterBalance} onChange={(e) => setTxnFilterBalance(e.target.value)}>
+                  <option value="all">Any Balance</option>
+                  <option value="settled">Settled</option>
+                  <option value="owes">Owes</option>
+                  <option value="refund">Refund</option>
+                </select>
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label style={{ fontSize: '10px' }}>Min Total (₹)</label>
+                <input type="number" min="0" className="input-field" style={{ padding: '6px 10px', fontSize: '12px' }} placeholder="0" value={txnFilterMinTotal} onChange={(e) => setTxnFilterMinTotal(e.target.value)} />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label style={{ fontSize: '10px' }}>Max Total (₹)</label>
+                <input type="number" min="0" className="input-field" style={{ padding: '6px 10px', fontSize: '12px' }} placeholder="Any" value={txnFilterMaxTotal} onChange={(e) => setTxnFilterMaxTotal(e.target.value)} />
+              </div>
+            </div>
+          )}
+
           {currentPeriodSales.length === 0 ? (
             <p style={{ color: 'var(--text-muted)', fontSize: '13px', textAlign: 'center', padding: '40px 0' }}>No completed orders recorded.</p>
+          ) : filteredTransactions.length === 0 ? (
+            <p style={{ color: 'var(--text-muted)', fontSize: '13px', textAlign: 'center', padding: '40px 0' }}>No transactions match your filters. <button className="btn btn-secondary" style={{ padding: '4px 10px', fontSize: '12px', marginLeft: '6px' }} onClick={handleClearTxnFilters}>Clear filters</button></p>
           ) : (
             <div className="table-wrapper" style={{ maxHeight: '350px', overflowY: 'auto' }}>
               <table className="data-table" style={{ fontSize: '13px' }}>
@@ -1123,7 +1351,7 @@ export default function Reports({
                   </tr>
                 </thead>
                 <tbody>
-                  {currentPeriodSales.slice().reverse().map(sale => {
+                  {filteredTransactions.slice().reverse().map(sale => {
                     const balance = sale.total - (sale.amountPaid ?? sale.total);
                     const isSplit = sale.paymentMethod.startsWith('Split');
                     const { cash: splitCash, upi: splitUpi } = isSplit ? getSplitAmounts(sale) : { cash: 0, upi: 0 };
@@ -1317,11 +1545,24 @@ export default function Reports({
                       type="checkbox"
                       checked={editIsStaffBill}
                       onChange={(e) => {
-                        setEditIsStaffBill(e.target.checked);
-                        if (!e.target.checked) {
+                        const checked = e.target.checked;
+                        setEditIsStaffBill(checked);
+                        if (!checked) {
                           setEditStaffMemberId('');
                           setEditStaffNote('');
                         }
+                        // Re-price every line item to match: staff bills go out at raw
+                        // wholesale/ingredient cost (no markup); switching back off
+                        // restores the normal menu (MRP) price.
+                        setEditItems(prev => prev.map(item => {
+                          const menuItem = products.find(p => p.id === item.productId);
+                          if (!menuItem) return item;
+                          if (checked) {
+                            const cost = getWholesaleCost(menuItem, inventory);
+                            return { ...item, price: cost > 0 ? cost : item.price };
+                          }
+                          return { ...item, price: menuItem.price };
+                        }));
                       }}
                     />
                     🧑‍🍳 Staff Bill (internal — no profit, tracked as expense)

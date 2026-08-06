@@ -18,3 +18,16 @@ export function getMenuIngredients(menuItem) {
 
   return [];
 }
+
+// Per-unit raw-ingredient (wholesale) cost of one menu item, summed across every
+// inventory item it's linked to. This is what a menu item actually costs the
+// business to make — as opposed to `menuItem.price`, the marked-up price charged
+// to paying customers. Used to bill staff meals at cost (zero profit) and to
+// report ingredient cost/profit per item.
+export function getWholesaleCost(menuItem, inventory = []) {
+  if (!menuItem) return 0;
+  return getMenuIngredients(menuItem).reduce((sum, ing) => {
+    const invItem = inventory.find(inv => inv.id === ing.inventoryId);
+    return sum + (invItem ? (Number(invItem.costPrice) || 0) * ing.qty : 0);
+  }, 0);
+}

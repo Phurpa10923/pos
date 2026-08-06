@@ -1090,6 +1090,55 @@ body {
   font-weight: 500;
 }
 
+.chart-hover-line {
+  stroke: var(--accent-teal);
+  stroke-width: 1;
+  stroke-dasharray: 3;
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.chart-dot-hovered {
+  r: 6;
+  stroke-width: 2.5;
+  filter: drop-shadow(0 0 6px var(--accent-teal-glow));
+  pointer-events: none;
+}
+
+/* Floating tooltip that follows the pointer over the revenue trend chart —
+   positioned via left/top % (set inline, relative to .chart-container) so it
+   tracks the hovered day regardless of how wide the chart is scaled. */
+.chart-tooltip {
+  position: absolute;
+  transform: translate(-50%, -120%);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 5;
+}
+
+.chart-tooltip-date {
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.chart-tooltip-value {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--accent-teal);
+}
+
+.chart-tooltip-hint {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
 /* Receipt Preview (Simulated POS receipt) */
 .receipt-preview {
   background: #f8fafc; /* Classic light paper style */
