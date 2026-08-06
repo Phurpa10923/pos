@@ -283,19 +283,39 @@ export async function dbFetchSalesByRange(startIso, endIso) {
   const restaurantId = getRestaurantId();
   if (!restaurantId) return [];
 
-  const url = `${SUPABASE_URL}/rest/v1/sales?restaurant_id=eq.${encodeURIComponent(restaurantId)}&timestamp=gte.${encodeURIComponent(startIso)}&timestamp=lte.${encodeURIComponent(endIso)}`;
-  const response = await fetch(url, {
-    method: 'GET',
-    headers: authHeaders({ 'Content-Type': 'application/json' })
-  });
+  // PostgREST caps a single response at 1000 rows and, without an explicit `order`,
+  // makes no guarantee about *which* 1000 come back. A busy restaurant can rack up
+  // more than 1000 sales inside a 30-day window, and an unordered single request was
+  // silently dropping recent sales (including "today") whenever that cap was hit.
+  // Paging through the full result set, oldest-first, fixes both problems.
+  const baseUrl = `${SUPABASE_URL}/rest/v1/sales?restaurant_id=eq.${encodeURIComponent(restaurantId)}&timestamp=gte.${encodeURIComponent(startIso)}&timestamp=lte.${encodeURIComponent(endIso)}&order=timestamp.asc`;
+  const pageSize = 1000;
+  const results = [];
+  let offset = 0;
 
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Failed to load sales from cloud: ${text}`);
+  for (;;) {
+    const response = await fetch(baseUrl, {
+      method: 'GET',
+      headers: authHeaders({
+        'Content-Type': 'application/json',
+        'Range-Unit': 'items',
+        'Range': `${offset}-${offset + pageSize - 1}`
+      })
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`Failed to load sales from cloud: ${text}`);
+    }
+
+    const page = await response.json();
+    results.push(...page);
+
+    if (page.length < pageSize) break;
+    offset += pageSize;
   }
 
-  const list = await response.json();
-  return list.map(item => toCamelCase(item, 'sales'));
+  return results.map(item => toCamelCase(item, 'sales'));
 }
 
 // --- Restaurant (tenant) record lookups, by explicit id — usable before login ---
