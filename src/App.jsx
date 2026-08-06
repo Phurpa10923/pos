@@ -340,6 +340,20 @@ export default function App() {
     };
   }, [currentUser, restaurantId, isOnline]);
 
+  // Dashboard has no fetch of its own — it just reads `sales`, which otherwise only
+  // refreshes on initial load, a realtime push, or the 60s poll. Reports fetches fresh
+  // on every open, so a sale made on another terminal (or just before the next poll
+  // tick) could show correctly in Reports while Dashboard still read a stale ₹0.
+  // Refetching whenever the user switches to Dashboard closes that gap.
+  useEffect(() => {
+    if (view !== 'dashboard' || !currentUser || !restaurantId) return;
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    dbFetchSalesByRange(thirtyDaysAgo.toISOString(), new Date().toISOString())
+      .then(setSales)
+      .catch(err => console.warn('[PortablePOS] Dashboard sales refresh failed:', err));
+  }, [view, currentUser, restaurantId]);
+
   // --- Login Handler ---
   const handleLoginSubmit = async (e) => {
     e.preventDefault();
